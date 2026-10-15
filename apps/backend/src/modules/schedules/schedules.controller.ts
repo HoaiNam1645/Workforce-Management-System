@@ -104,6 +104,12 @@ export class SchedulesController {
     return this.schedulesService.getMyShiftDetail(id, user);
   }
 
+  @Get('grid')
+  @RequirePermissions('schedules.view')
+  getEmployeeGrid(@Query() query: ShiftQueryDto, @CurrentUser() user: AuthUser) {
+    return this.schedulesService.getEmployeeGrid(query, user);
+  }
+
   @Get('shifts')
   @RequirePermissions('schedules.view')
   findAll(@Query() query: ShiftQueryDto, @CurrentUser() user: AuthUser) {

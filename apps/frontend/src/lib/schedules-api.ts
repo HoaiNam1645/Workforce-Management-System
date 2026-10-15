@@ -92,6 +92,22 @@ export type ShiftAssignment = {
   };
 };
 
+export type EmployeeScheduleGrid = {
+  shifts: ShiftItem[];
+  employees: Array<{
+    id: string;
+    employeeCode: string;
+    fullName: string;
+    initials: string;
+    employmentType: string;
+    employmentStatus: string;
+    department: { id: string; name: string };
+    position: { id: string; name: string };
+    branch: { id: string; name: string };
+  }>;
+  assignments: Array<{ id: string; shiftId: string; employeeId: string; status: string }>;
+};
+
 export type ShiftCandidate = {
   id: string;
   employeeCode: string;
@@ -126,6 +142,22 @@ export function getShifts(params: {
     if (value !== undefined && value !== '') query.set(key, String(value));
   });
   return apiRequest<ShiftPage>(`/schedules/shifts?${query.toString()}`);
+}
+
+export function getEmployeeScheduleGrid(params: {
+  from: string;
+  to: string;
+  branchId?: string;
+  departmentId?: string;
+  status?: ShiftStatus;
+  search?: string;
+}) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== '') query.set(key, String(value));
+  });
+  query.set('limit', '200');
+  return apiRequest<EmployeeScheduleGrid>(`/schedules/grid?${query.toString()}`);
 }
 
 export function createShift(payload: ShiftPayload) {

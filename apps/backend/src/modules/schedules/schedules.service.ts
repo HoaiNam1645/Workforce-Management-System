@@ -99,6 +99,69 @@ export class SchedulesService {
     };
   }
 
+  async getEmployeeGrid(query: ShiftQueryDto, actor: AuthUser) {
+    const [shiftPage, scope, organizationId] = await Promise.all([
+      this.findAll({ ...query, page: 1, limit: 200 }, actor),
+      this.resolveScope(actor),
+      this.actorOrganizationId(actor),
+    ]);
+    const shiftIds = shiftPage.items.map((shift) => shift.id);
+    const assignments = shiftIds.length
+      ? await this.assignmentRepository.find({
+        where: { shiftId: In(shiftIds), assignmentStatus: Not('cancelled') },
+        relations: { employee: { department: true, position: true, primaryBranch: true } },
+        order: { assignedAt: 'ASC' },
+      })
+      : [];
+
+    const employeeQuery = this.employeeRepository.createQueryBuilder('employee')
+      .innerJoinAndSelect('employee.department', 'department')
+      .innerJoinAndSelect('employee.position', 'position')
+      .innerJoinAndSelect('employee.primaryBranch', 'branch')
+      .where('employee.organization_id = :organizationId', { organizationId })
+      .andWhere('employee.deleted_at IS NULL')
+      .andWhere("employee.employment_status <> 'terminated'");
+    if (!scope.unrestricted) {
+      employeeQuery.andWhere(new Brackets((where) => {
+        if (scope.branchIds.length) where.where('employee.primary_branch_id IN (:...scopeBranchIds)', { scopeBranchIds: scope.branchIds });
+        if (scope.departmentIds.length) {
+          const method = scope.branchIds.length ? 'orWhere' : 'where';
+          where[method]('employee.department_id IN (:...scopeDepartmentIds)', { scopeDepartmentIds: scope.departmentIds });
+        }
+      }));
+    }
+    if (query.branchId) employeeQuery.andWhere('employee.primary_branch_id = :branchId', { branchId: query.branchId });
+    if (query.departmentId) employeeQuery.andWhere('employee.department_id = :departmentId', { departmentId: query.departmentId });
+    const employees = await employeeQuery
+      .orderBy('department.name', 'ASC')
+      .addOrderBy('employee.last_name', 'ASC')
+      .addOrderBy('employee.first_name', 'ASC')
+      .getMany();
+
+    const employeeMap = new Map(employees.map((employee) => [employee.id, employee]));
+    assignments.forEach((assignment) => employeeMap.set(assignment.employee.id, assignment.employee));
+    return {
+      shifts: shiftPage.items,
+      employees: [...employeeMap.values()].map((employee) => ({
+        id: employee.id,
+        employeeCode: employee.employeeCode,
+        fullName: this.employeeName(employee),
+        initials: this.initials(this.employeeName(employee)),
+        employmentType: employee.employmentType,
+        employmentStatus: employee.employmentStatus,
+        department: { id: employee.department.id, name: employee.department.name },
+        position: { id: employee.position.id, name: employee.position.name },
+        branch: { id: employee.primaryBranch.id, name: employee.primaryBranch.name },
+      })),
+      assignments: assignments.map((assignment) => ({
+        id: assignment.id,
+        shiftId: assignment.shiftId,
+        employeeId: assignment.employeeId,
+        status: assignment.assignmentStatus,
+      })),
+    };
+  }
+
   async findOne(id: string, actor: AuthUser) {
     const shift = await this.getShiftEntity(id);
     await this.assertShiftInScope(shift, actor);

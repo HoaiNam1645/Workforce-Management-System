@@ -22,6 +22,8 @@ export type MyAttendance = {
     branchName: string;
     address: string;
     geofenceRequired: boolean;
+    latitude: number | null;
+    longitude: number | null;
     geofenceRadiusM: number;
   };
   requiresOutsideScheduleReason: boolean;

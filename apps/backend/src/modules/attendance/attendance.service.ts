@@ -917,6 +917,8 @@ export class AttendanceService {
         branchName: clockBranch.name,
         address: clockBranch.addressLine,
         geofenceRequired: clockBranch.latitude !== null && clockBranch.longitude !== null,
+        latitude: clockBranch.latitude === null ? null : Number(clockBranch.latitude),
+        longitude: clockBranch.longitude === null ? null : Number(clockBranch.longitude),
         geofenceRadiusM: clockBranch.geofenceRadiusM,
       },
       requiresOutsideScheduleReason: !active && !nextAssignment && canClockOutsideSchedule,

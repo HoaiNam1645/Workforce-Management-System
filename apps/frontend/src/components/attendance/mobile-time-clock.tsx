@@ -13,12 +13,14 @@ import {
   Coffee,
   Fingerprint,
   LoaderCircle,
+  LocateFixed,
   LogOut,
   MapPin,
   Navigation,
   RefreshCw,
   ShieldCheck,
 } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
@@ -35,6 +37,13 @@ import { cn } from '@/lib/utils';
 import { AttendanceSelfie } from './attendance-selfie';
 import { AttendanceHistory } from './attendance-history';
 import { SelfieCaptureDialog } from './selfie-capture-dialog';
+
+const EmployeeLocationMap = dynamic(() => import('./employee-location-map'), {
+  ssr: false,
+  loading: () => <div className="flex min-h-64 items-center justify-center bg-canvas text-xs font-bold text-muted"><LoaderCircle className="mr-2 size-4 animate-spin" />Đang tải bản đồ vị trí...</div>,
+});
+
+type EmployeeLocation = { latitude: number; longitude: number; accuracyM: number; updatedAt: Date };
 
 const actionLabels: Record<AttendanceEventType, string> = {
   check_in: 'Check-in',
@@ -86,11 +95,23 @@ function completedBreakSeconds(events: MyAttendance['events'], now: Date) {
   return seconds;
 }
 
+function distanceInMeters(latitudeA: number, longitudeA: number, latitudeB: number, longitudeB: number) {
+  const radians = (value: number) => value * Math.PI / 180;
+  const earthRadius = 6_371_000;
+  const deltaLatitude = radians(latitudeB - latitudeA);
+  const deltaLongitude = radians(longitudeB - longitudeA);
+  const value = Math.sin(deltaLatitude / 2) ** 2 + Math.cos(radians(latitudeA)) * Math.cos(radians(latitudeB)) * Math.sin(deltaLongitude / 2) ** 2;
+  return earthRadius * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
+}
+
 export function MobileTimeClock() {
   const queryClient = useQueryClient();
   const [now, setNow] = useState(new Date());
   const [outsideScheduleReason, setOutsideScheduleReason] = useState('');
   const [selfieAction, setSelfieAction] = useState<'check_in' | 'check_out' | null>(null);
+  const [employeeLocation, setEmployeeLocation] = useState<EmployeeLocation | null>(null);
+  const [locationError, setLocationError] = useState('');
+  const [locating, setLocating] = useState(true);
   const query = useQuery({ queryKey: ['my-attendance'], queryFn: getMyAttendance, refetchInterval: 30_000 });
   const data = query.data;
 
@@ -99,17 +120,51 @@ export function MobileTimeClock() {
     return () => window.clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    if (!navigator.geolocation) {
+      setLocationError('Trình duyệt không hỗ trợ GPS. Bạn không thể thực hiện chấm công trên thiết bị này.');
+      setLocating(false);
+      return;
+    }
+    setLocating(true);
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        setEmployeeLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude, accuracyM: position.coords.accuracy, updatedAt: new Date(position.timestamp) });
+        setLocationError('');
+        setLocating(false);
+      },
+      (error) => {
+        setLocationError(error.code === error.PERMISSION_DENIED ? 'Bạn phải cấp quyền vị trí để xem phạm vi và thực hiện chấm công.' : 'Không thể xác định vị trí hiện tại. Hãy bật GPS và thử lại.');
+        setLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 15_000, maximumAge: 5_000 },
+    );
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, []);
+
+  const refreshLocation = async () => {
+    setLocating(true);
+    setLocationError('');
+    try {
+      const position = await getCurrentPosition();
+      setEmployeeLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude, accuracyM: position.coords.accuracy, updatedAt: new Date(position.timestamp) });
+    } catch (error) {
+      setLocationError(error instanceof Error ? error.message : 'Không thể lấy vị trí hiện tại.');
+    } finally {
+      setLocating(false);
+    }
+  };
+
   const actionPayload = async (): Promise<ClockActionPayload> => {
     const payload: ClockActionPayload = {
       deviceId: getDeviceId(),
       outsideScheduleReason: outsideScheduleReason.trim() || undefined,
     };
-    if (data?.clockLocation.geofenceRequired) {
-      const position = await getCurrentPosition();
-      payload.latitude = position.coords.latitude;
-      payload.longitude = position.coords.longitude;
-      payload.locationAccuracyM = position.coords.accuracy;
-    }
+    const position = await getCurrentPosition();
+    payload.latitude = position.coords.latitude;
+    payload.longitude = position.coords.longitude;
+    payload.locationAccuracyM = position.coords.accuracy;
+    setEmployeeLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude, accuracyM: position.coords.accuracy, updatedAt: new Date(position.timestamp) });
     return payload;
   };
   const mutationOptions = {
@@ -122,6 +177,10 @@ export function MobileTimeClock() {
   const isMutating = checkInMutation.isPending || checkOutMutation.isPending || startBreakMutation.isPending || endBreakMutation.isPending;
 
   const breakSeconds = useMemo(() => data ? completedBreakSeconds(data.events, now) : 0, [data, now]);
+  const distanceFromBranch = useMemo(() => {
+    if (!data || !employeeLocation || data.clockLocation.latitude === null || data.clockLocation.longitude === null) return null;
+    return distanceInMeters(employeeLocation.latitude, employeeLocation.longitude, data.clockLocation.latitude, data.clockLocation.longitude);
+  }, [data, employeeLocation]);
 
   const elapsedSeconds = useMemo(() => {
     if (!data?.record?.checkInAt) return 0;
@@ -147,11 +206,13 @@ export function MobileTimeClock() {
   const hasUsedBreak = data.events.some((event) => event.type === 'break_start');
   const liveBreakOverSeconds = data.shift && breakSeconds > allowedBreakSeconds ? breakSeconds - allowedBreakSeconds : 0;
   const breakOverMinutes = Math.max(data.record?.breakOverMinutes ?? 0, liveBreakOverSeconds > 0 ? Math.max(Math.ceil(liveBreakOverSeconds / 60), 1) : 0);
+  const withinGeofence = distanceFromBranch === null ? null : distanceFromBranch <= data.clockLocation.geofenceRadiusM;
+  const gpsReady = employeeLocation !== null;
 
   return <div className="w-full min-w-0 space-y-5">
     <header className="flex flex-col justify-between gap-3 lg:flex-row lg:items-end">
       <div><p className="text-xs font-bold uppercase tracking-[0.14em] text-brand">Chấm công cá nhân</p><h1 className="mt-2 text-2xl font-black tracking-[-0.04em] sm:text-[30px]">Bắt đầu ngày làm việc</h1><p className="mt-2 text-sm text-muted">Check-in và check-out yêu cầu chụp selfie trực tiếp bằng camera.</p></div>
-      <div className="flex flex-wrap items-center gap-3 text-xs font-bold text-muted"><span className="flex items-center gap-2"><Camera className="size-4 text-brand" />Selfie bắt buộc</span><span className="flex items-center gap-2"><Navigation className="size-4 text-brand" />{data.clockLocation.geofenceRequired ? `GPS bắt buộc · ${data.clockLocation.geofenceRadiusM}m` : 'GPS chưa bắt buộc'}</span></div>
+      <div className="flex flex-wrap items-center gap-3 text-xs font-bold text-muted"><span className="flex items-center gap-2"><Camera className="size-4 text-brand" />Selfie bắt buộc</span><span className="flex items-center gap-2"><Navigation className="size-4 text-brand" />GPS bắt buộc{data.clockLocation.geofenceRequired ? ` · ${data.clockLocation.geofenceRadiusM}m` : ''}</span></div>
     </header>
 
     <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
@@ -184,16 +245,17 @@ export function MobileTimeClock() {
           </div>
 
           <div className="pt-6">
-            {data.allowedActions.checkIn && <Button size="lg" variant="brand" className="h-14 w-full text-base" disabled={isMutating || (data.requiresOutsideScheduleReason && outsideScheduleReason.trim().length < 5)} onClick={() => setSelfieAction('check_in')}><Camera className="size-5" />{data.requiresOutsideScheduleReason ? 'Chụp selfie và check-in ngoài lịch' : 'Chụp selfie và check-in'}<ArrowRight className="ml-auto size-5" /></Button>}
-            {data.state === 'working' && <div className={cn('grid gap-3', data.allowedActions.startBreak && 'sm:grid-cols-2')}>{data.allowedActions.startBreak && <Button size="lg" variant="outline" className="h-14" loading={startBreakMutation.isPending} loadingText="Đang lấy GPS và bắt đầu nghỉ..." disabled={isMutating} onClick={() => startBreakMutation.mutate()}><Coffee className="size-5" />Bắt đầu nghỉ · GPS</Button>}<Button size="lg" variant="brand" className="h-14" disabled={isMutating} onClick={() => setSelfieAction('check_out')}><Camera className="size-5" />Chụp selfie và check-out</Button></div>}
+            {data.allowedActions.checkIn && <Button size="lg" variant="brand" className="h-14 w-full text-base" disabled={isMutating || !gpsReady || (data.requiresOutsideScheduleReason && outsideScheduleReason.trim().length < 5)} onClick={() => setSelfieAction('check_in')}><Camera className="size-5" />{data.requiresOutsideScheduleReason ? 'Chụp selfie và check-in ngoài lịch' : 'Chụp selfie và check-in'}<ArrowRight className="ml-auto size-5" /></Button>}
+            {data.state === 'working' && <div className={cn('grid gap-3', data.allowedActions.startBreak && 'sm:grid-cols-2')}>{data.allowedActions.startBreak && <Button size="lg" variant="outline" className="h-14" loading={startBreakMutation.isPending} loadingText="Đang lấy GPS và bắt đầu nghỉ..." disabled={isMutating || !gpsReady} onClick={() => startBreakMutation.mutate()}><Coffee className="size-5" />Bắt đầu nghỉ · GPS</Button>}<Button size="lg" variant="brand" className="h-14" disabled={isMutating || !gpsReady} onClick={() => setSelfieAction('check_out')}><Camera className="size-5" />Chụp selfie và check-out</Button></div>}
             {data.state === 'working' && hasUsedBreak && <div className="mt-3 flex items-start gap-2 border border-line bg-canvas p-3 text-xs text-muted"><Check className="mt-0.5 size-4 shrink-0 text-success" /><span>Bạn đã sử dụng một lần nghỉ của ca này. Hệ thống không cho bắt đầu thêm break.</span></div>}
-            {data.allowedActions.endBreak && <Button size="lg" variant="brand" className="h-14 w-full text-base" loading={endBreakMutation.isPending} loadingText="Đang lấy GPS và kết thúc nghỉ..." onClick={() => endBreakMutation.mutate()}><Navigation className="size-5" />Kết thúc nghỉ tại khu vực làm việc</Button>}
+            {data.allowedActions.endBreak && <Button size="lg" variant="brand" className="h-14 w-full text-base" loading={endBreakMutation.isPending} loadingText="Đang lấy GPS và kết thúc nghỉ..." disabled={!gpsReady} onClick={() => endBreakMutation.mutate()}><Navigation className="size-5" />Kết thúc nghỉ tại khu vực làm việc</Button>}
             {!data.allowedActions.checkIn && !data.allowedActions.checkOut && !data.allowedActions.startBreak && !data.allowedActions.endBreak && <div className="flex items-center gap-3 border border-line bg-canvas p-4"><span className="grid size-9 place-items-center bg-success-soft text-success"><Check className="size-4" /></span><div><p className="text-sm font-extrabold">Không có thao tác cần thực hiện</p><p className="mt-1 text-xs text-muted">Trạng thái sẽ tự cập nhật khi ca tiếp theo đến gần.</p></div></div>}
           </div>
         </section>
       </main>
 
       <aside className="min-w-0 space-y-5">
+        <section className="overflow-hidden border border-line bg-surface shadow-panel"><header className="flex items-center justify-between border-b border-line px-4 py-3"><div><p className="text-sm font-extrabold">Vị trí chấm công</p><p className="mt-0.5 text-[11px] text-muted">GPS được lấy tự động từ thiết bị này</p></div><Navigation className={cn('size-4', withinGeofence === false ? 'text-danger' : 'text-success')} /></header>{data.clockLocation.geofenceRequired && data.clockLocation.latitude !== null && data.clockLocation.longitude !== null && employeeLocation ? <><div className="h-72"><EmployeeLocationMap branchLatitude={data.clockLocation.latitude} branchLongitude={data.clockLocation.longitude} radiusM={data.clockLocation.geofenceRadiusM} employeeLatitude={employeeLocation.latitude} employeeLongitude={employeeLocation.longitude} accuracyM={employeeLocation.accuracyM} withinGeofence={withinGeofence === true} /></div><div className={cn('border-t p-4', withinGeofence ? 'border-success/20 bg-success-soft' : 'border-danger/20 bg-danger-soft')}><p className={cn('text-sm font-extrabold', withinGeofence ? 'text-success' : 'text-danger')}>{withinGeofence ? 'Bạn đang trong khu vực chấm công' : 'Bạn đang ngoài khu vực chấm công'}</p><p className="mt-1 text-xs text-muted">Cách tâm chi nhánh khoảng {Math.round(distanceFromBranch ?? 0)}m · độ chính xác GPS ±{Math.round(employeeLocation.accuracyM)}m</p></div></> : <div className="p-5">{locating ? <p className="flex items-center gap-2 text-sm font-bold text-muted"><LoaderCircle className="size-4 animate-spin text-brand" />Đang lấy vị trí bắt buộc...</p> : <><p className="text-sm font-extrabold text-danger">Chưa xác định được vị trí</p><p className="mt-2 text-xs leading-5 text-muted">{locationError || (data.clockLocation.geofenceRequired ? 'Hãy bật GPS để hệ thống đối chiếu khu vực.' : 'Chi nhánh chưa cấu hình tâm geofence.')}</p><Button size="sm" variant="outline" className="mt-3" onClick={refreshLocation}><LocateFixed className="size-4" />Lấy lại vị trí</Button></>}</div>}</section>
         <section className="border border-line bg-surface shadow-panel"><header className="flex items-center justify-between border-b border-line px-4 py-3"><div><p className="text-sm font-extrabold">Hoạt động phiên này</p><p className="mt-0.5 text-[11px] text-muted">Dữ liệu được ghi nhận theo thời gian thực</p></div><ShieldCheck className="size-4 text-success" /></header>
           {data.events.length ? <div className="divide-y divide-line">{[...data.events].reverse().map((event, index) => <div key={event.id} className="flex items-center gap-3 px-4 py-3">{event.photoUrl ? <AttendanceSelfie path={event.photoUrl} alt={`Selfie ${actionLabels[event.type]}`} className="size-9" /> : <span className={cn('grid size-8 place-items-center border', index === 0 ? 'border-brand/20 bg-info-soft text-brand' : 'border-line bg-canvas text-muted')}><EventIcon type={event.type} /></span>}<div className="min-w-0 flex-1"><p className="text-xs font-extrabold">{actionLabels[event.type]}</p><p className="mt-0.5 text-[10px] uppercase tracking-wide text-muted">{event.method === 'mobile' ? 'Điện thoại' : 'Trình duyệt'}{event.photoUrl ? ' · Có selfie' : ''}</p></div><time className="font-mono text-xs font-bold">{format(new Date(event.occurredAt), 'HH:mm:ss')}</time></div>)}</div> : <div className="p-7 text-center"><Clock3 className="mx-auto size-5 text-muted" /><p className="mt-3 text-sm font-bold">Chưa có hoạt động</p><p className="mt-1 text-xs text-muted">Sự kiện sẽ xuất hiện sau khi bạn check-in.</p></div>}
         </section>

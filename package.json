@@ -1,0 +1,29 @@
+{
+  "name": "workforce-management",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/backend",
+    "apps/frontend"
+  ],
+  "scripts": {
+    "db:setup": "bash scripts/setup-local-db.sh",
+    "dev": "concurrently -n backend,frontend -c blue,green \"npm run dev -w @workforce/backend\" \"npm run dev -w @workforce/frontend\"",
+    "dev:backend": "npm run dev -w @workforce/backend",
+    "dev:frontend": "npm run dev -w @workforce/frontend",
+    "build": "npm run build -w @workforce/backend && npm run build -w @workforce/frontend",
+    "start:backend": "npm run start -w @workforce/backend",
+    "start:frontend": "npm run start -w @workforce/frontend",
+    "typecheck": "npm run typecheck -w @workforce/backend && npm run typecheck -w @workforce/frontend"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5"
+  },
+  "overrides": {
+    "shell-quote": "^1.12.0"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  }
+}

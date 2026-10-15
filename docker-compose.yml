@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: workforce-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: workforce
+      POSTGRES_USER: workforce
+      POSTGRES_PASSWORD: workforce
+    ports:
+      - "5432:5432"
+    volumes:
+      - workforce_postgres_data:/var/lib/postgresql/data
+      - ./csdl.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workforce -d workforce"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  workforce_postgres_data:

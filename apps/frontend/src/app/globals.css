@@ -1,0 +1,138 @@
+@import 'tailwindcss';
+
+:root {
+  --canvas: #f3f8ff;
+  --surface: #ffffff;
+  --ink: #17233b;
+  --muted: #687994;
+  --line: #dce7f4;
+  --brand: #3b82f6;
+  --brand-strong: #2563eb;
+  --brand-light: #93c5fd;
+  --sidebar: #183b66;
+  --success: #0b8f70;
+  --success-soft: #e4f7f1;
+  --warning: #dda53c;
+  --warning-strong: #946313;
+  --warning-soft: #fff4dc;
+  --danger: #d55757;
+  --danger-soft: #ffeded;
+  --info: #4777c7;
+  --info-soft: #eaf2ff;
+}
+
+@utility input {
+  height: 2.5rem;
+  width: 100%;
+  border: 1px solid var(--color-line);
+  background: white;
+  padding-inline: 0.75rem;
+  font-size: 0.875rem;
+  outline: none;
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-brand: var(--brand);
+  --color-brand-strong: var(--brand-strong);
+  --color-brand-light: var(--brand-light);
+  --color-sidebar: var(--sidebar);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-strong: var(--warning-strong);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --font-sans: var(--font-be-vietnam);
+  --font-mono: var(--font-ibm-plex-mono);
+  --shadow-panel: 0 1px 0 rgba(43, 83, 128, 0.025), 0 12px 30px rgba(44, 91, 145, 0.07);
+}
+
+@keyframes toast-progress {
+  from { transform: scaleX(1); transform-origin: left; }
+  to { transform: scaleX(0); transform-origin: left; }
+}
+
+@keyframes global-loading {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(410%); }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--canvas);
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  background:
+    radial-gradient(circle at 88% -10%, rgba(91, 158, 255, 0.15), transparent 28rem),
+    radial-gradient(circle at 18% 15%, rgba(180, 221, 255, 0.13), transparent 22rem),
+    var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-be-vietnam), sans-serif;
+  font-feature-settings: 'ss01' 1, 'cv02' 1;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  cursor: pointer;
+}
+
+::selection {
+  background: rgba(59, 130, 246, 0.22);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: rgba(74, 103, 139, 0.22);
+  background-clip: padding-box;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-rise {
+  animation: rise 480ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

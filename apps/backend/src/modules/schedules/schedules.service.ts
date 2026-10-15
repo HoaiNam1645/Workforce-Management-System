@@ -161,6 +161,12 @@ export class SchedulesService {
     const endsAt = dto.endsAt ?? shift.endsAt.toISOString();
     const breakMinutes = dto.unpaidBreakMinutes ?? shift.unpaidBreakMinutes;
     this.validateTimes(startsAt, endsAt, breakMinutes);
+    if (new Date(startsAt) <= new Date()) {
+      throw new BadRequestException('Không thể chuyển ca về thời điểm đã bắt đầu hoặc trong quá khứ');
+    }
+    if (dto.startsAt !== undefined || dto.endsAt !== undefined) {
+      await this.assertAssignedEmployeesAvailable(shift, new Date(startsAt), new Date(endsAt));
+    }
     const before = this.auditValues(shift);
 
     if (dto.name !== undefined) shift.name = dto.name.trim();
@@ -852,6 +858,21 @@ export class SchedulesService {
     conflicts.forEach(({ employeeId }) => { result.get(employeeId)!.conflict = true; });
     approvedLeave.forEach(({ employeeId }) => { result.get(employeeId)!.onLeave = true; });
     return result;
+  }
+
+  private async assertAssignedEmployeesAvailable(shift: Shift, startsAt: Date, endsAt: Date) {
+    const assignments = await this.assignmentRepository.find({
+      where: { shiftId: shift.id, assignmentStatus: Not('cancelled') },
+      relations: { employee: true },
+    });
+    if (!assignments.length) return;
+
+    const proposedShift = this.shiftRepository.create({ ...shift, startsAt, endsAt });
+    const availability = await this.getEmployeeAvailability(proposedShift, assignments.map((item) => item.employeeId));
+    const conflicts = assignments.filter((item) => availability.get(item.employeeId)?.conflict).map((item) => this.employeeName(item.employee));
+    const onLeave = assignments.filter((item) => availability.get(item.employeeId)?.onLeave).map((item) => this.employeeName(item.employee));
+    if (conflicts.length) throw new BadRequestException(`Không thể di chuyển ca: ${conflicts.join(', ')} bị trùng ca`);
+    if (onLeave.length) throw new BadRequestException(`Không thể di chuyển ca: ${onLeave.join(', ')} đang có nghỉ phép đã duyệt`);
   }
 
   private employeeWorksOnDate(employee: Employee, shift: Shift) {

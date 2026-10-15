@@ -136,6 +136,10 @@ export function updateShift(id: string, payload: Partial<ShiftPayload>) {
   return apiRequest<ShiftItem>(`/schedules/shifts/${id}`, { method: 'PATCH', body: JSON.stringify(payload) });
 }
 
+export function moveShift(id: string, startsAt: string, endsAt: string) {
+  return updateShift(id, { startsAt, endsAt });
+}
+
 export function deleteShift(id: string) {
   return apiRequest<{ id: string; action: 'deleted' | 'cancelled' }>(`/schedules/shifts/${id}`, { method: 'DELETE' });
 }

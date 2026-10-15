@@ -286,7 +286,7 @@ export type LiveShiftResponse = {
   refreshAfterSeconds: number;
   policy: {
     lateGraceMinutes: number;
-    missingCheckoutGraceMinutes: number;
+    missingCheckoutAtEndOfDay: boolean;
     absenceAfterShiftEnds: boolean;
   };
   filters: {

@@ -1,4 +1,5 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
@@ -26,7 +27,6 @@ type AttendanceScope = { unrestricted: boolean; branchIds: string[]; departmentI
 type LiveShiftState = 'upcoming' | 'not_checked_in' | 'working' | 'on_break' | 'checked_out' | 'absent' | 'missing_checkout';
 const sharp = require('sharp') as typeof import('sharp').default;
 const LATE_GRACE_MINUTES = 15;
-const MISSING_CHECKOUT_GRACE_MINUTES = 30;
 
 export type AttendanceSelfieFile = {
   buffer: Buffer;
@@ -36,6 +36,7 @@ export type AttendanceSelfieFile = {
 
 @Injectable()
 export class AttendanceService {
+  private readonly logger = new Logger(AttendanceService.name);
   private readonly uploadRoot = resolve(process.cwd(), process.env.UPLOAD_DIR ?? 'uploads');
 
   constructor(
@@ -53,12 +54,12 @@ export class AttendanceService {
   async getMyAttendance(actor: AuthUser) {
     const employee = await this.getEmployee(actor);
     const now = new Date();
-    const activeRecord = await this.findActiveRecord(employee.id);
-    const currentRecord = activeRecord ?? await this.findLatestRecord(employee.id);
+    await this.reconcileOpenRecords(employee.id, now);
+    const currentRecord = await this.findOpenRecord(employee.id);
     const events = currentRecord
       ? await this.eventRepository.find({ where: { attendanceRecordId: currentRecord.id }, order: { occurredAt: 'ASC' } })
       : [];
-    const nextAssignment = activeRecord?.shiftAssignment ?? await this.findClockableAssignment(employee.id, now);
+    const nextAssignment = currentRecord?.shiftAssignment ?? await this.findClockableAssignment(employee.id, now);
     const outsideRecord = await this.recordRepository.findOneBy({
       employeeId: employee.id,
       shiftAssignmentId: IsNull(),
@@ -86,16 +87,12 @@ export class AttendanceService {
     const preparedSelfie = await this.prepareSelfie(selfie);
     const employee = await this.getEmployee(actor);
     const now = new Date();
+    await this.reconcileOpenRecords(employee.id, now);
     let photoUrl: string | null = null;
 
     try {
       await this.dataSource.transaction(async (manager) => {
-        const openRecord = await manager.getRepository(AttendanceRecord).createQueryBuilder('record')
-          .setLock('pessimistic_write')
-          .where('record.employee_id = :employeeId', { employeeId: employee.id })
-          .andWhere('record.actual_check_in_at IS NOT NULL')
-          .andWhere('record.actual_check_out_at IS NULL')
-          .getOne();
+        const openRecord = await this.findOpenRecord(employee.id, manager, true);
         if (openRecord) throw new BadRequestException('Bạn đã check-in và chưa check-out ca hiện tại');
 
         const assignment = await this.findClockableAssignment(employee.id, now, manager);
@@ -362,6 +359,7 @@ export class AttendanceService {
 
   async getLiveShifts(query: LiveShiftQueryDto, actor: AuthUser) {
     const now = new Date();
+    await this.reconcileOpenRecords(undefined, now);
     const workDate = query.date ?? this.dateInTimezone(now, 'Asia/Ho_Chi_Minh');
     const parsedDate = new Date(`${workDate}T00:00:00+07:00`);
     if (Number.isNaN(parsedDate.getTime()) || this.dateInTimezone(parsedDate, 'Asia/Ho_Chi_Minh') !== workDate) {
@@ -461,10 +459,11 @@ export class AttendanceService {
         const recordEvents = record ? eventsByRecord.get(record.id) ?? [] : [];
         const lastEvent = recordEvents.at(-1) ?? null;
         const breakState = this.calculateLiveBreak(recordEvents, now);
-        const missingCheckoutAt = new Date(shift.endsAt.getTime() + MISSING_CHECKOUT_GRACE_MINUTES * 60_000);
+        const shiftWorkDate = this.dateInTimezone(shift.startsAt, shift.branch.timezone);
+        const isAfterWorkDate = this.dateInTimezone(now, shift.branch.timezone) > shiftWorkDate;
         let state: LiveShiftState;
         if (record?.actualCheckOutAt) state = 'checked_out';
-        else if (record?.actualCheckInAt && now >= missingCheckoutAt) state = 'missing_checkout';
+        else if (record?.actualCheckInAt && isAfterWorkDate) state = 'missing_checkout';
         else if (record?.actualCheckInAt && breakState.activeStartedAt) state = 'on_break';
         else if (record?.actualCheckInAt) state = 'working';
         else if (now >= shift.endsAt) state = 'absent';
@@ -554,7 +553,7 @@ export class AttendanceService {
       refreshAfterSeconds: 20,
       policy: {
         lateGraceMinutes: LATE_GRACE_MINUTES,
-        missingCheckoutGraceMinutes: MISSING_CHECKOUT_GRACE_MINUTES,
+        missingCheckoutAtEndOfDay: true,
         absenceAfterShiftEnds: true,
       },
       filters: {
@@ -704,23 +703,61 @@ export class AttendanceService {
     action: (manager: EntityManager, record: AttendanceRecord, events: AttendanceEvent[], now: Date) => Promise<void>,
   ) {
     if (!actor.employeeId) throw new ForbiddenException('Tài khoản chưa liên kết với hồ sơ nhân viên');
+    await this.reconcileOpenRecords(actor.employeeId);
     await this.dataSource.transaction(async (manager) => {
-      const record = await manager.getRepository(AttendanceRecord).createQueryBuilder('record')
-        .setLock('pessimistic_write')
-        .where('record.employee_id = :employeeId', { employeeId: actor.employeeId })
-        .andWhere('record.actual_check_in_at IS NOT NULL')
-        .andWhere('record.actual_check_out_at IS NULL')
-        .getOne();
-      if (!record) throw new NotFoundException('Bạn chưa check-in ca làm nào');
-      record.branch = await manager.getRepository(Branch).findOneByOrFail({ id: record.branchId });
-      if (record.shiftAssignmentId) {
-        record.shiftAssignment = await manager.getRepository(ShiftAssignment).findOne({
-          where: { id: record.shiftAssignmentId },
-          relations: { shift: { branch: true } },
+      const record = await this.findOpenRecord(actor.employeeId!, manager, true);
+      if (!record) {
+        const lockedRecord = await manager.getRepository(AttendanceRecord).findOne({
+          where: { employeeId: actor.employeeId!, status: 'missing_check_out', actualCheckOutAt: IsNull() },
+          order: { workDate: 'DESC', updatedAt: 'DESC' },
         });
+        if (lockedRecord) {
+          throw new BadRequestException('Phiên chấm công của ngày trước đã tự khóa lúc hết ngày vì chưa check-out');
+        }
+        throw new NotFoundException('Bạn chưa check-in ca làm nào');
       }
       const events = await manager.getRepository(AttendanceEvent).find({ where: { attendanceRecordId: record.id }, order: { occurredAt: 'ASC' } });
       await action(manager, record, events, new Date());
+    });
+  }
+
+  @Cron(CronExpression.EVERY_MINUTE)
+  async closeExpiredAttendanceSessions() {
+    try {
+      const closed = await this.reconcileOpenRecords();
+      if (closed > 0) this.logger.log(`Đã tự khóa ${closed} phiên chấm công qua ngày chưa check-out`);
+    } catch (error) {
+      this.logger.error('Không thể tự khóa phiên chấm công qua ngày', error instanceof Error ? error.stack : String(error));
+    }
+  }
+
+  private async reconcileOpenRecords(employeeId?: string, now = new Date()) {
+    return this.dataSource.transaction(async (manager) => {
+      const query = manager.getRepository(AttendanceRecord).createQueryBuilder('record')
+        .innerJoinAndSelect('record.branch', 'branch')
+        .where('record.actual_check_in_at IS NOT NULL')
+        .andWhere('record.actual_check_out_at IS NULL')
+        .andWhere('record.status IN (:...statuses)', { statuses: ['open', 'missing_check_out'] })
+        .setLock('pessimistic_write', undefined, ['record']);
+      if (employeeId) query.andWhere('record.employee_id = :employeeId', { employeeId });
+
+      const records = await query.getMany();
+      let closed = 0;
+      for (const record of records) {
+        const branchDate = this.dateInTimezone(now, record.branch.timezone);
+        const expired = record.workDate < branchDate;
+        const targetStatus = expired ? 'missing_check_out' : 'open';
+        if (record.status !== targetStatus) {
+          record.status = targetStatus;
+          record.updatedAt = now;
+          await manager.save(record);
+          if (expired) {
+            closed += 1;
+            await this.syncMissingCheckoutViolation(manager, record, now);
+          }
+        }
+      }
+      return closed;
     });
   }
 
@@ -799,29 +836,23 @@ export class AttendanceService {
     return employee;
   }
 
-  private findActiveRecord(employeeId: string) {
-    return this.recordRepository.createQueryBuilder('record')
-      .leftJoinAndSelect('record.branch', 'branch')
-      .leftJoinAndSelect('record.shiftAssignment', 'assignment')
-      .leftJoinAndSelect('assignment.shift', 'shift')
-      .leftJoinAndSelect('shift.branch', 'shiftBranch')
+  private async findOpenRecord(employeeId: string, manager?: EntityManager, lock = false) {
+    const entityManager = manager ?? this.dataSource.manager;
+    const query = entityManager.getRepository(AttendanceRecord).createQueryBuilder('record')
+      .innerJoin('record.branch', 'recordBranch')
       .where('record.employee_id = :employeeId', { employeeId })
       .andWhere('record.actual_check_in_at IS NOT NULL')
       .andWhere('record.actual_check_out_at IS NULL')
-      .orderBy('record.actual_check_in_at', 'DESC')
-      .getOne();
-  }
-
-  private findLatestRecord(employeeId: string) {
-    return this.recordRepository.createQueryBuilder('record')
-      .leftJoinAndSelect('record.branch', 'branch')
-      .leftJoinAndSelect('record.shiftAssignment', 'assignment')
-      .leftJoinAndSelect('assignment.shift', 'shift')
-      .leftJoinAndSelect('shift.branch', 'shiftBranch')
-      .where('record.employee_id = :employeeId', { employeeId })
-      .orderBy('record.actual_check_in_at', 'DESC', 'NULLS LAST')
-      .addOrderBy('record.created_at', 'DESC')
-      .getOne();
+      .andWhere('record.status = :status', { status: 'open' })
+      .andWhere('record.work_date >= (CURRENT_TIMESTAMP AT TIME ZONE recordBranch.timezone)::date')
+      .orderBy('record.actual_check_in_at', 'DESC');
+    if (lock) query.setLock('pessimistic_write');
+    const openRecord = await query.getOne();
+    if (!openRecord) return null;
+    return entityManager.getRepository(AttendanceRecord).findOne({
+      where: { id: openRecord.id },
+      relations: { branch: true, shiftAssignment: { shift: { branch: true } } },
+    });
   }
 
   private findClockableAssignment(employeeId: string, now: Date, manager?: EntityManager) {
@@ -976,7 +1007,12 @@ export class AttendanceService {
     const violations = record ? violationsByRecord.get(record.id) ?? [] : [];
     let displayStatus = record?.status ?? 'scheduled';
     if (!record && shift && shift.endsAt < now) displayStatus = 'missing_check_in';
-    if (record?.actualCheckInAt && !record.actualCheckOutAt && shift && shift.endsAt < now) displayStatus = 'missing_check_out';
+    if (
+      record?.actualCheckInAt
+      && !record.actualCheckOutAt
+      && shift
+      && this.dateInTimezone(now, shift.branch.timezone) > record.workDate
+    ) displayStatus = 'missing_check_out';
     return {
       sortAt: shift?.startsAt ?? record?.actualCheckInAt ?? new Date(`${record?.workDate ?? '1970-01-01'}T00:00:00Z`),
       id: record?.id ?? `shift:${effectiveAssignment?.id}`,
@@ -1091,6 +1127,32 @@ export class AttendanceService {
     violation.status = 'accepted';
     violation.details = `Tự động ghi nhận nghỉ quá ${minutesOver} phút; thời lượng break của ca là ${allowedMinutes} phút.`;
     violation.detectedAt = new Date();
+    await repository.save(violation);
+  }
+
+  private async syncMissingCheckoutViolation(manager: EntityManager, record: AttendanceRecord, detectedAt: Date) {
+    const repository = manager.getRepository(AttendanceViolation);
+    const existing = await repository.findOneBy({
+      employeeId: record.employeeId,
+      attendanceRecordId: record.id,
+      violationType: 'missing_check_out',
+      violationDate: record.workDate,
+    });
+    const violation = existing ?? repository.create({
+      employeeId: record.employeeId,
+      attendanceRecordId: record.id,
+      shiftAssignmentId: record.shiftAssignmentId,
+      violationType: 'missing_check_out',
+      violationDate: record.workDate,
+      resolvedBy: null,
+      resolvedAt: null,
+      resolutionNote: null,
+    });
+    violation.minutesAffected = 0;
+    violation.severity = 'warning';
+    violation.status = 'accepted';
+    violation.details = 'Tự động ghi nhận thiếu check-out khi phiên chấm công qua hết ngày làm việc.';
+    violation.detectedAt = detectedAt;
     await repository.save(violation);
   }
 

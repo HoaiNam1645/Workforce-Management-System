@@ -1,6 +1,5 @@
 import {
   Activity,
-  ArrowRight,
   BadgeCheck,
   Blocks,
   Building2,
@@ -11,7 +10,6 @@ import {
   Fingerprint,
   KeyRound,
   LockKeyhole,
-  MoreHorizontal,
   ServerCog,
   ShieldCheck,
   UserCog,
@@ -68,33 +66,27 @@ export default function SuperAdminDashboardPage() {
               Không có sự cố nghiêm trọng. Một cảnh báo dung lượng cần được theo dõi trong tuần này.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button className="border border-white/12 bg-white/8 text-white hover:bg-white/14">Xem audit log</Button>
-            <Button variant="brand" asChild><Link href="/super-admin/access">Quản lý quyền</Link></Button>
-          </div>
+          <Button variant="brand" asChild><Link href="/super-admin/access">Quản lý quyền</Link></Button>
         </div>
       </section>
 
-      <section className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid min-w-0 grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         {systemMetrics.map((metric, index) => {
           const Icon = metric.icon;
           return (
             <article
               key={metric.label}
-              className="animate-rise min-w-0 rounded-lg border border-line bg-surface p-5 shadow-panel"
+              className="animate-rise min-w-0 rounded-lg border border-line bg-surface p-4 shadow-panel sm:p-5"
               style={{ animationDelay: `${index * 70}ms` }}
             >
-              <div className="flex items-start justify-between">
+              <div className="flex items-start">
                 <div className={`grid size-10 place-items-center rounded-md ${metric.tone}`}>
                   <Icon className="size-[18px]" />
                 </div>
-                <button className="grid size-8 place-items-center rounded-md text-muted hover:bg-canvas">
-                  <MoreHorizontal className="size-4" />
-                </button>
               </div>
-              <p className="mt-5 font-mono text-[28px] font-semibold leading-none tracking-[-0.055em]">{metric.value}</p>
-              <p className="mt-3 text-sm font-extrabold">{metric.label}</p>
-              <p className="mt-1 text-[11px] text-muted">{metric.detail}</p>
+              <p className="mt-4 font-mono text-2xl font-semibold leading-none tracking-[-0.055em] sm:mt-5 sm:text-[28px]">{metric.value}</p>
+              <p className="mt-2 text-xs font-extrabold sm:mt-3 sm:text-sm">{metric.label}</p>
+              <p className="mt-1 truncate text-[10px] text-muted sm:text-[11px]">{metric.detail}</p>
             </article>
           );
         })}
@@ -165,9 +157,6 @@ export default function SuperAdminDashboardPage() {
               <h2 className="text-base font-extrabold tracking-[-0.02em]">Hoạt động gần đây</h2>
               <p className="mt-1 text-xs text-muted">Sự kiện bảo mật và cấu hình quan trọng</p>
             </div>
-            <button className="inline-flex items-center gap-1.5 text-xs font-extrabold text-success">
-              Xem tất cả <ArrowRight className="size-3.5" />
-            </button>
           </div>
 
           <div className="divide-y divide-line/80">
@@ -213,32 +202,7 @@ export default function SuperAdminDashboardPage() {
             <div className="flex items-center justify-between"><span className="text-muted">Tài khoản bị khóa</span><strong>2 tài khoản</strong></div>
             <div className="flex items-center justify-between"><span className="text-muted">Đăng nhập hôm nay</span><strong>87 lượt</strong></div>
           </div>
-          <button className="mt-6 flex w-full items-center justify-center gap-2 rounded-md bg-ink py-3 text-xs font-extrabold text-white">
-            Mở trung tâm bảo mật <ArrowRight className="size-3.5" />
-          </button>
         </article>
-      </section>
-
-      <section className="grid gap-4 md:grid-cols-3">
-        {[
-          { title: 'Cấu hình tổ chức', detail: 'Thông tin doanh nghiệp, múi giờ và tiền tệ', icon: Building2 },
-          { title: 'Chính sách truy cập', detail: 'Session, mật khẩu và xác thực hai lớp', icon: LockKeyhole },
-          { title: 'Tích hợp hệ thống', detail: 'Email, push notification và webhook', icon: Webhook },
-        ].map((item) => {
-          const Icon = item.icon;
-          return (
-            <button key={item.title} className="group flex items-center gap-4 rounded-lg border border-line bg-surface p-5 text-left shadow-panel transition hover:-translate-y-0.5 hover:border-success/25">
-              <div className="grid size-11 shrink-0 place-items-center rounded-md bg-canvas text-ink group-hover:bg-success-soft group-hover:text-success">
-                <Icon className="size-[19px]" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-extrabold">{item.title}</p>
-                <p className="mt-1 truncate text-[11px] text-muted">{item.detail}</p>
-              </div>
-              <ArrowRight className="size-4 text-muted transition group-hover:translate-x-1 group-hover:text-success" />
-            </button>
-          );
-        })}
       </section>
     </div>
   );

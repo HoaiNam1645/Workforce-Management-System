@@ -22,7 +22,7 @@ export default function LoginPage() {
     try {
       const user = await login(email, password);
       showToast({ title: 'Đăng nhập thành công', description: `Xin chào ${user.displayName}.`, tone: 'success' });
-      router.replace(user.roles.some((role) => role.code === 'SUPER_ADMIN') ? '/super-admin/access' : '/admin');
+      router.replace(user.roles.some((role) => role.code === 'SUPER_ADMIN') ? '/super-admin/access' : user.permissions.includes('organization.view') ? '/admin' : '/overview');
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Không thể đăng nhập');
       showToast({ title: 'Đăng nhập không thành công', description: requestError instanceof Error ? requestError.message : 'Kiểm tra lại thông tin đăng nhập.', tone: 'error' });

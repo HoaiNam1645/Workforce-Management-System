@@ -39,6 +39,10 @@ export async function apiBlob(path: string): Promise<Blob> {
   const response = await fetch(`${API_URL}${path}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   });
-  if (!response.ok) throw new ApiError('Không thể tải ảnh selfie', response.status);
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { message?: string | string[] } | null;
+    const rawMessage = body?.message;
+    throw new ApiError(Array.isArray(rawMessage) ? rawMessage.join(', ') : rawMessage || 'Không thể tải dữ liệu', response.status);
+  }
   return response.blob();
 }

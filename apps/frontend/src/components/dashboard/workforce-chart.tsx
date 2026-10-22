@@ -9,6 +9,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { formatDurationMinutes } from '@/lib/time-format';
 
 const data = [
   { day: 'T2', planned: 82, actual: 78 },
@@ -41,7 +42,7 @@ export function WorkforceChart() {
           <YAxis
             axisLine={false}
             tick={{ fill: '#8291a8', fontSize: 10 }}
-            tickFormatter={(value: number) => `${value}h`}
+            tickFormatter={(value: number) => formatDurationMinutes(value * 60)}
             tickLine={false}
           />
           <Tooltip

@@ -125,6 +125,9 @@ button {
 
 .leaflet-container {
   font-family: var(--font-be-vietnam), sans-serif;
+  /* Keep Leaflet's internal panes (z-index 200-1000) inside the map itself. */
+  isolation: isolate;
+  z-index: 0;
 }
 
 ::selection {

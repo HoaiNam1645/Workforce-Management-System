@@ -9,7 +9,9 @@ import { User } from '../../access-control/entities/user.entity';
 @Check("leave_requests_check1", "(((status)::text <> 'approved'::text) OR (reviewed_at IS NOT NULL))")
 @Check("leave_requests_check2", "(((status)::text <> 'rejected'::text) OR (reviewed_at IS NOT NULL))")
 @Check("leave_requests_requested_amount_check", "(requested_amount > (0)::numeric)")
-@Check("leave_requests_status_check", "((status)::text = ANY ((ARRAY['pending'::character varying, 'approved'::character varying, 'rejected'::character varying, 'cancelled'::character varying])::text[]))")
+@Check("leave_requests_day_part_check", "((day_part IS NULL) OR ((day_part)::text = ANY ((ARRAY['first_half'::character varying, 'second_half'::character varying])::text[])))")
+@Check("leave_requests_request_mode_check", "((request_mode)::text = ANY ((ARRAY['full_day'::character varying, 'half_day'::character varying, 'hourly'::character varying])::text[]))")
+@Check("leave_requests_status_check", "((status)::text = ANY ((ARRAY['draft'::character varying, 'pending'::character varying, 'approved'::character varying, 'rejected'::character varying, 'cancelled'::character varying])::text[]))")
 @Entity({ name: 'leave_requests', schema: 'workforce' })
 export class LeaveRequest {
   @PrimaryGeneratedColumn('uuid', { name: 'id' })
@@ -27,8 +29,26 @@ export class LeaveRequest {
   @Column('timestamptz', { name: 'ends_at' })
   endsAt!: Date;
 
+  @Column('varchar', { name: 'request_mode', length: 20, default: () => "'full_day'::character varying" })
+  requestMode!: string;
+
+  @Column('varchar', { name: 'day_part', nullable: true, length: 20 })
+  dayPart!: string | null;
+
   @Column('numeric', { name: 'requested_amount', precision: 8, scale: 2 })
   requestedAmount!: string;
+
+  @Column('varchar', { name: 'unit_snapshot', length: 10, default: () => "'day'::character varying" })
+  unitSnapshot!: string;
+
+  @Column('boolean', { name: 'is_paid_snapshot', default: () => "true" })
+  isPaidSnapshot!: boolean;
+
+  @Column('numeric', { name: 'hours_per_day_snapshot', precision: 5, scale: 2, default: () => "8" })
+  hoursPerDaySnapshot!: string;
+
+  @Column('smallint', { name: 'balance_year' })
+  balanceYear!: number;
 
   @Column('text', { name: 'reason', nullable: true })
   reason!: string | null;
@@ -41,6 +61,9 @@ export class LeaveRequest {
 
   @Column('timestamptz', { name: 'requested_at', default: () => "CURRENT_TIMESTAMP" })
   requestedAt!: Date;
+
+  @Column('uuid', { name: 'requested_by', nullable: true })
+  requestedBy!: string | null;
 
   @Column('uuid', { name: 'reviewed_by', nullable: true })
   reviewedBy!: string | null;
@@ -67,6 +90,10 @@ export class LeaveRequest {
   @ManyToOne(() => User, { nullable: true })
   @JoinColumn({ name: 'reviewed_by', referencedColumnName: 'id', foreignKeyConstraintName: 'leave_requests_reviewed_by_fkey' })
   reviewedByUser!: User | null;
+
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'requested_by', referencedColumnName: 'id', foreignKeyConstraintName: 'leave_requests_requested_by_fkey' })
+  requestedByUser!: User | null;
 
   @ManyToOne(() => LeaveType, {  })
   @JoinColumn({ name: 'leave_type_id', referencedColumnName: 'id', foreignKeyConstraintName: 'leave_requests_leave_type_id_fkey' })

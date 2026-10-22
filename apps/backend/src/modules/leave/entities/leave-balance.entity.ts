@@ -28,6 +28,12 @@ export class LeaveBalance {
   @Column('numeric', { name: 'used_amount', precision: 8, scale: 2, default: () => "0" })
   usedAmount!: string;
 
+  @Column('numeric', { name: 'reserved_amount', precision: 8, scale: 2, default: () => "0" })
+  reservedAmount!: string;
+
+  @Column('numeric', { name: 'expired_amount', precision: 8, scale: 2, default: () => "0" })
+  expiredAmount!: string;
+
   @Column('numeric', { name: 'adjusted_amount', precision: 8, scale: 2, default: () => "0" })
   adjustedAmount!: string;
 

@@ -43,7 +43,6 @@ modules/
 ├── access-control/
 ├── attendance/
 ├── audit/
-├── compliance/
 ├── core/
 ├── employees/
 ├── labor-costs/
@@ -52,7 +51,6 @@ modules/
 ├── organization/
 ├── payroll/
 ├── schedules/
-├── tasks/
 └── timesheets/
 ```
 

@@ -8,6 +8,7 @@
   ],
   "scripts": {
     "db:setup": "bash scripts/setup-local-db.sh",
+    "db:seed": "npm run db:seed -w @workforce/backend",
     "dev": "concurrently -n backend,frontend -c blue,green \"npm run dev -w @workforce/backend\" \"npm run dev -w @workforce/frontend\"",
     "dev:backend": "npm run dev -w @workforce/backend",
     "dev:frontend": "npm run dev -w @workforce/frontend",
@@ -17,6 +18,7 @@
     "typecheck": "npm run typecheck -w @workforce/backend && npm run typecheck -w @workforce/frontend"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "concurrently": "^10.0.5"
   },
   "overrides": {

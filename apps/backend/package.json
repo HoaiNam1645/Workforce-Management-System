@@ -9,6 +9,7 @@
     "migration:run": "typeorm-ts-node-commonjs -d src/database/data-source.ts migration:run",
     "migration:revert": "typeorm-ts-node-commonjs -d src/database/data-source.ts migration:revert",
     "auth:bootstrap": "ts-node src/scripts/bootstrap-super-admin.ts",
+    "db:seed": "ts-node src/scripts/seed-demo-data.ts",
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit -p tsconfig.build.json"
   },

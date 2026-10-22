@@ -8,7 +8,6 @@ import { AppService } from './app.service';
 import { AccessControlModule } from './modules/access-control/access-control.module';
 import { AttendanceModule } from './modules/attendance/attendance.module';
 import { AuditModule } from './modules/audit/audit.module';
-import { ComplianceModule } from './modules/compliance/compliance.module';
 import { CoreModule } from './modules/core/core.module';
 import { EmployeesModule } from './modules/employees/employees.module';
 import { LaborCostsModule } from './modules/labor-costs/labor-costs.module';
@@ -17,8 +16,8 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { OrganizationModule } from './modules/organization/organization.module';
 import { PayrollModule } from './modules/payroll/payroll.module';
 import { SchedulesModule } from './modules/schedules/schedules.module';
-import { TasksModule } from './modules/tasks/tasks.module';
 import { TimesheetsModule } from './modules/timesheets/timesheets.module';
+import { ReportsModule } from './modules/reports/reports.module';
 import { JwtAuthGuard } from './modules/access-control/guards/jwt-auth.guard';
 import { PermissionsGuard } from './modules/access-control/guards/permissions.guard';
 
@@ -60,10 +59,9 @@ import { PermissionsGuard } from './modules/access-control/guards/permissions.gu
     TimesheetsModule,
     PayrollModule,
     LaborCostsModule,
-    TasksModule,
-    ComplianceModule,
     NotificationsModule,
     AuditModule,
+    ReportsModule,
   ],
   controllers: [AppController],
   providers: [

@@ -44,6 +44,9 @@ export class TimesheetEntry {
   @Column('text', { name: 'note', nullable: true })
   note!: string | null;
 
+  @Column('jsonb', { name: 'snapshot_data', nullable: true })
+  snapshotData!: Record<string, unknown>[] | null;
+
   @Column('timestamptz', { name: 'created_at', default: () => "CURRENT_TIMESTAMP" })
   createdAt!: Date;
 

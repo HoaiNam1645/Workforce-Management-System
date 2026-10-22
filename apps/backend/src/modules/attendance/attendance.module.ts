@@ -10,6 +10,12 @@ import { Shift } from '../schedules/entities/shift.entity';
 import { AttendanceController } from './attendance.controller';
 import { AttendanceService } from './attendance.service';
 import { Branch } from '../organization/entities/branch.entity';
+import { Organization } from '../core/entities/organization.entity';
+import { LeaveRequest } from '../leave/entities/leave-request.entity';
+import { AttendanceAnomalySetting } from './entities/attendance-anomaly-setting.entity';
+import { AttendanceViolationHistory } from './entities/attendance-violation-history.entity';
+import { AttendanceAnomalyService } from './attendance-anomaly.service';
+import { AttendanceClockAttempt } from './entities/attendance-clock-attempt.entity';
 
 const entities = [
   AttendanceRecord,
@@ -20,12 +26,17 @@ const entities = [
   ShiftAssignment,
   Shift,
   Branch,
+  Organization,
+  LeaveRequest,
+  AttendanceAnomalySetting,
+  AttendanceViolationHistory,
+  AttendanceClockAttempt,
 ];
 
 @Module({
   imports: [TypeOrmModule.forFeature(entities)],
   controllers: [AttendanceController],
-  providers: [AttendanceService],
-  exports: [TypeOrmModule, AttendanceService],
+  providers: [AttendanceService, AttendanceAnomalyService],
+  exports: [TypeOrmModule, AttendanceService, AttendanceAnomalyService],
 })
 export class AttendanceModule {}

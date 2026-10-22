@@ -154,7 +154,7 @@ export function SelfieCaptureDialog({ action, errorMessage, isSubmitting, onClos
     <button aria-label="Đóng camera" className="absolute inset-0" disabled={isSubmitting} onClick={onClose} />
     <section className="relative z-10 flex max-h-[96vh] w-full max-w-xl flex-col overflow-hidden border border-white/20 bg-[#07182d] text-white shadow-2xl">
       <header className="flex items-start justify-between border-b border-white/10 px-4 py-4 sm:px-5">
-        <div><p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-blue-300">Xác thực bằng selfie</p><h2 className="mt-1 text-lg font-black">Chụp ảnh để {actionLabel.toLowerCase()}</h2><p className="mt-1 text-xs text-white/55">Không có ảnh hợp lệ, hệ thống sẽ không ghi nhận {actionLabel.toLowerCase()}.</p></div>
+        <div><p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-blue-300">Xác thực bằng selfie</p><h2 className="mt-1 text-lg font-black">Chụp ảnh để {actionLabel.toLowerCase()}</h2><p className="mt-1 text-xs text-white/55">Ảnh cần nhìn rõ khuôn mặt.</p></div>
         <button className="grid size-9 shrink-0 place-items-center text-white/60 hover:bg-white/10 hover:text-white disabled:opacity-40" disabled={isSubmitting} onClick={onClose}><X className="size-5" /></button>
       </header>
 

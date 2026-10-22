@@ -16,6 +16,8 @@ import { AttendanceAdjustmentRequest } from './entities/attendance-adjustment-re
 import { AttendanceEvent } from './entities/attendance-event.entity';
 import { AttendanceRecord } from './entities/attendance-record.entity';
 import { AttendanceViolation } from './entities/attendance-violation.entity';
+import { AttendanceAnomalyService } from './attendance-anomaly.service';
+import { AttendanceClockAttempt } from './entities/attendance-clock-attempt.entity';
 
 type RequestContext = {
   userAgent?: string;
@@ -25,8 +27,12 @@ type RequestContext = {
 type AttendanceEventType = 'check_in' | 'check_out' | 'break_start' | 'break_end';
 type AttendanceScope = { unrestricted: boolean; branchIds: string[]; departmentIds: string[] };
 type LiveShiftState = 'upcoming' | 'not_checked_in' | 'working' | 'on_break' | 'checked_out' | 'absent' | 'missing_checkout';
+class OutsideGeofenceError extends BadRequestException {
+  constructor(public readonly distanceM: number, public readonly radiusM: number) {
+    super(`Bạn đang cách khu vực chấm công khoảng ${Math.round(distanceM)}m; phạm vi cho phép là ${radiusM}m`);
+  }
+}
 const sharp = require('sharp') as typeof import('sharp').default;
-const LATE_GRACE_MINUTES = 15;
 
 export type AttendanceSelfieFile = {
   buffer: Buffer;
@@ -48,7 +54,9 @@ export class AttendanceService {
     @InjectRepository(AttendanceEvent) private readonly eventRepository: Repository<AttendanceEvent>,
     @InjectRepository(AttendanceAdjustmentRequest) private readonly adjustmentRepository: Repository<AttendanceAdjustmentRequest>,
     @InjectRepository(AttendanceViolation) private readonly violationRepository: Repository<AttendanceViolation>,
+    @InjectRepository(AttendanceClockAttempt) private readonly clockAttemptRepository: Repository<AttendanceClockAttempt>,
     @InjectRepository(Branch) private readonly branchRepository: Repository<Branch>,
+    private readonly anomalyService: AttendanceAnomalyService,
   ) {}
 
   async getMyAttendance(actor: AuthUser) {
@@ -66,15 +74,22 @@ export class AttendanceService {
       workDate: this.dateInTimezone(now, employee.primaryBranch.timezone),
     });
 
-    return this.toResponse(employee, currentRecord, events, nextAssignment, !outsideRecord?.actualCheckInAt, now);
+    const settings = await this.anomalyService.getSettings();
+    return this.toResponse(employee, currentRecord, events, nextAssignment, !outsideRecord?.actualCheckInAt, now, settings.lateGraceMinutes);
   }
 
   async getEventSelfie(id: string, actor: AuthUser) {
-    const event = await this.eventRepository.findOneBy({ id });
+    const event = await this.eventRepository.findOne({ where: { id }, relations: { employee: true } });
     if (!event?.photoUrl) throw new NotFoundException('Không tìm thấy ảnh selfie chấm công');
     const canReviewAttendance = actor.permissions.includes('attendance.adjust');
     if (event.employeeId !== actor.employeeId && !canReviewAttendance) {
       throw new ForbiddenException('Bạn không có quyền xem ảnh selfie này');
+    }
+    if (event.employeeId !== actor.employeeId) {
+      const scope = await this.resolveAttendanceScope(actor);
+      if (!scope.unrestricted && !scope.branchIds.includes(event.employee.primaryBranchId) && !scope.departmentIds.includes(event.employee.departmentId)) {
+        throw new ForbiddenException('Ảnh selfie nằm ngoài phạm vi quản lý');
+      }
     }
     try {
       return await readFile(this.selfieAbsolutePath(event.photoUrl));
@@ -134,9 +149,9 @@ export class AttendanceService {
         record.status = 'open';
         record.updatedAt = now;
         record = await manager.save(record);
-        await this.syncLateViolation(manager, record);
         photoUrl = await this.storeSelfie(preparedSelfie, employee.id, 'check_in', now);
         await this.createEvent(manager, record, branch, employee.id, 'check_in', now, dto, actor.id, context, photoUrl);
+        await this.anomalyService.recalculateRecord(record.id, manager, false);
       });
     } catch (error) {
       if (photoUrl) await this.removeSelfie(photoUrl);
@@ -158,6 +173,7 @@ export class AttendanceService {
       }
       this.validateBreakLocation(dto, record.branch);
       await this.createEvent(manager, record, record.branch, actor.employeeId!, 'break_start', now, dto, actor.id, context);
+      await this.anomalyService.recalculateRecord(record.id, manager, false);
     });
     return this.getMyAttendance(actor);
   }
@@ -170,7 +186,7 @@ export class AttendanceService {
       record.breakMinutes = this.calculateBreakMinutes([...events, newEvent]);
       record.updatedAt = now;
       await manager.save(record);
-      await this.syncBreakViolation(manager, record);
+      await this.anomalyService.recalculateRecord(record.id, manager, false);
     });
     return this.getMyAttendance(actor);
   }
@@ -195,9 +211,9 @@ export class AttendanceService {
         record.status = 'completed';
         record.updatedAt = now;
         await manager.save(record);
-        await this.syncBreakViolation(manager, record);
         photoUrl = await this.storeSelfie(preparedSelfie, actor.employeeId!, 'check_out', now);
         await this.createEvent(manager, record, record.branch, actor.employeeId!, 'check_out', now, dto, actor.id, context, photoUrl);
+        await this.anomalyService.recalculateRecord(record.id, manager, true);
       });
     } catch (error) {
       if (photoUrl) await this.removeSelfie(photoUrl);
@@ -215,7 +231,7 @@ export class AttendanceService {
       throw new BadRequestException('Khoảng thời gian lịch sử không hợp lệ');
     }
 
-    const [records, assignments] = await Promise.all([
+    const [records, assignments, anomalySettings] = await Promise.all([
       this.recordRepository.createQueryBuilder('record')
         .leftJoinAndSelect('record.branch', 'branch')
         .leftJoinAndSelect('record.shiftAssignment', 'assignment')
@@ -235,6 +251,7 @@ export class AttendanceService {
         .andWhere('shift.deleted_at IS NULL')
         .andWhere('shift.starts_at >= :from AND shift.starts_at < :to', { from, to })
         .getMany(),
+      this.anomalyService.getSettings(),
     ]);
     const recordIds = records.map((record) => record.id);
     const [events, adjustments, violations] = recordIds.length ? await Promise.all([
@@ -248,11 +265,11 @@ export class AttendanceService {
     const violationsByRecord = this.groupBy(violations, (violation) => violation.attendanceRecordId!);
     const scheduledItems = assignments.map((assignment) => {
       const record = recordByAssignment.get(assignment.id) ?? null;
-      return this.historyItem(record, assignment, eventsByRecord, adjustmentsByRecord, violationsByRecord, now);
+      return this.historyItem(record, assignment, eventsByRecord, adjustmentsByRecord, violationsByRecord, now, anomalySettings.lateGraceMinutes);
     });
     const outsideItems = records
       .filter((record) => !record.shiftAssignmentId)
-      .map((record) => this.historyItem(record, null, eventsByRecord, adjustmentsByRecord, violationsByRecord, now));
+      .map((record) => this.historyItem(record, null, eventsByRecord, adjustmentsByRecord, violationsByRecord, now, anomalySettings.lateGraceMinutes));
     return [...scheduledItems, ...outsideItems].sort((a, b) => b.sortAt.getTime() - a.sortAt.getTime()).map(({ sortAt: _sortAt, ...item }) => item);
   }
 
@@ -366,7 +383,7 @@ export class AttendanceService {
       throw new BadRequestException('Ngày theo dõi không hợp lệ');
     }
 
-    const scope = await this.resolveAttendanceScope(actor);
+    const [scope, anomalySettings] = await Promise.all([this.resolveAttendanceScope(actor), this.anomalyService.getSettings()]);
     const shiftQuery = this.shiftRepository.createQueryBuilder('shift')
       .innerJoinAndSelect('shift.branch', 'branch')
       .leftJoinAndSelect('shift.department', 'shiftDepartment')
@@ -477,7 +494,7 @@ export class AttendanceService {
           ? record.lateMinutes
           : ['not_checked_in', 'absent'].includes(state) ? minutesFromStart : 0;
         const badges: string[] = [];
-        if (lateMinutes > LATE_GRACE_MINUTES) badges.push('late');
+        if (lateMinutes > anomalySettings.lateGraceMinutes) badges.push('late');
         if (record?.earlyLeaveMinutes && record.earlyLeaveMinutes > 0) badges.push('early_leave');
         if (recordEvents.some((event) => event.isWithinGeofence === false)) badges.push('outside_geofence');
         if (breakState.totalMinutes > shift.unpaidBreakMinutes) badges.push('excessive_break');
@@ -552,7 +569,7 @@ export class AttendanceService {
       workDate,
       refreshAfterSeconds: 20,
       policy: {
-        lateGraceMinutes: LATE_GRACE_MINUTES,
+        lateGraceMinutes: anomalySettings.lateGraceMinutes,
         missingCheckoutAtEndOfDay: true,
         absenceAfterShiftEnds: true,
       },
@@ -662,7 +679,7 @@ export class AttendanceService {
         record.status = 'adjusted';
         record.updatedAt = now;
         await manager.save(record);
-        await this.syncLateViolation(manager, record);
+        await this.anomalyService.recalculateRecord(record.id, manager, true, actor.id);
       }
     });
     return this.getAdjustmentRequests(actor);
@@ -675,7 +692,7 @@ export class AttendanceService {
       code: branch.code,
       name: branch.name,
       address: branch.addressLine,
-      enabled: branch.latitude !== null && branch.longitude !== null,
+      enabled: branch.geofenceEnabled,
       latitude: branch.latitude === null ? null : Number(branch.latitude),
       longitude: branch.longitude === null ? null : Number(branch.longitude),
       radiusM: branch.geofenceRadiusM,
@@ -688,8 +705,11 @@ export class AttendanceService {
     if (dto.enabled && (dto.latitude === undefined || dto.longitude === undefined)) {
       throw new BadRequestException('Cần nhập đầy đủ tọa độ khi bật geofence');
     }
-    branch.latitude = dto.enabled ? String(dto.latitude) : null;
-    branch.longitude = dto.enabled ? String(dto.longitude) : null;
+    branch.geofenceEnabled = dto.enabled;
+    if (dto.enabled) {
+      branch.latitude = String(dto.latitude);
+      branch.longitude = String(dto.longitude);
+    }
     branch.geofenceRadiusM = dto.radiusM;
     branch.updatedAt = new Date();
     await this.branchRepository.save(branch);
@@ -753,7 +773,7 @@ export class AttendanceService {
           await manager.save(record);
           if (expired) {
             closed += 1;
-            await this.syncMissingCheckoutViolation(manager, record, now);
+            await this.anomalyService.recalculateRecord(record.id, manager, true);
           }
         }
       }
@@ -774,7 +794,35 @@ export class AttendanceService {
     photoUrl: string | null = null,
   ) {
     const method = this.isMobile(context.userAgent) ? 'mobile' : 'web';
-    const location = this.validateLocation(dto, branch, method);
+    let location: { distance: number | null; within: boolean | null };
+    try {
+      location = this.validateLocation(dto, branch, method);
+    } catch (error) {
+      if (error instanceof OutsideGeofenceError) {
+        const attempt = await this.clockAttemptRepository.save(this.clockAttemptRepository.create({
+          employeeId,
+          shiftAssignmentId: record.shiftAssignmentId,
+          branchId: branch.id,
+          workDate: record.workDate,
+          eventType,
+          attemptedAt: occurredAt,
+          method,
+          rejectionReason: 'outside_geofence',
+          rejectionMessage: error.message,
+          deviceId: dto.deviceId ?? null,
+          ipAddress: context.ipAddress || null,
+          latitude: String(dto.latitude),
+          longitude: String(dto.longitude),
+          locationAccuracyM: dto.locationAccuracyM === undefined ? null : String(dto.locationAccuracyM),
+          distanceFromBranchM: String(Math.round(error.distanceM * 100) / 100),
+          geofenceRadiusM: error.radiusM,
+          metadata: { userAgent: context.userAgent ?? null, outsideSchedule: record.shiftAssignmentId === null },
+          createdBy: userId,
+        }));
+        await this.anomalyService.recordRejectedGeofenceAttempt(attempt.id);
+      }
+      throw error;
+    }
     return manager.save(AttendanceEvent, manager.create(AttendanceEvent, {
       attendanceRecordId: record.id,
       employeeId,
@@ -886,6 +934,7 @@ export class AttendanceService {
     nextAssignment: ShiftAssignment | null,
     canClockOutsideSchedule: boolean,
     serverTime: Date,
+    lateGraceMinutes: number,
   ) {
     const active = Boolean(record?.actualCheckInAt && !record.actualCheckOutAt);
     const onBreak = active && events.at(-1)?.eventType === 'break_start';
@@ -916,7 +965,7 @@ export class AttendanceService {
         branchId: clockBranch.id,
         branchName: clockBranch.name,
         address: clockBranch.addressLine,
-        geofenceRequired: clockBranch.latitude !== null && clockBranch.longitude !== null,
+        geofenceRequired: clockBranch.geofenceEnabled && clockBranch.latitude !== null && clockBranch.longitude !== null,
         latitude: clockBranch.latitude === null ? null : Number(clockBranch.latitude),
         longitude: clockBranch.longitude === null ? null : Number(clockBranch.longitude),
         geofenceRadiusM: clockBranch.geofenceRadiusM,
@@ -950,8 +999,8 @@ export class AttendanceService {
         breakOverMinutes: Math.max(visibleRecord.breakMinutes - (shift?.unpaidBreakMinutes ?? 0), 0),
         hasExcessiveBreak: Boolean(shift) && visibleRecord.breakMinutes > (shift?.unpaidBreakMinutes ?? 0),
         lateMinutes: visibleRecord.lateMinutes,
-        isLate: visibleRecord.lateMinutes > LATE_GRACE_MINUTES,
-        lateGraceMinutes: LATE_GRACE_MINUTES,
+        isLate: visibleRecord.lateMinutes > lateGraceMinutes,
+        lateGraceMinutes,
         earlyLeaveMinutes: visibleRecord.earlyLeaveMinutes,
         overtimeMinutes: visibleRecord.overtimeMinutes,
       } : null,
@@ -1001,6 +1050,7 @@ export class AttendanceService {
     adjustmentsByRecord: Map<string, AttendanceAdjustmentRequest[]>,
     violationsByRecord: Map<string, AttendanceViolation[]>,
     now: Date,
+    lateGraceMinutes: number,
   ) {
     const effectiveAssignment = assignment ?? record?.shiftAssignment ?? null;
     const shift = effectiveAssignment?.shift ?? null;
@@ -1036,8 +1086,8 @@ export class AttendanceService {
       breakOverMinutes: Math.max((record?.breakMinutes ?? 0) - (shift?.unpaidBreakMinutes ?? 0), 0),
       hasExcessiveBreak: Boolean(shift) && (record?.breakMinutes ?? 0) > (shift?.unpaidBreakMinutes ?? 0),
       lateMinutes: record?.lateMinutes ?? 0,
-      isLate: (record?.lateMinutes ?? 0) > LATE_GRACE_MINUTES,
-      lateGraceMinutes: LATE_GRACE_MINUTES,
+      isLate: (record?.lateMinutes ?? 0) > lateGraceMinutes,
+      lateGraceMinutes,
       earlyLeaveMinutes: record?.earlyLeaveMinutes ?? 0,
       overtimeMinutes: record?.overtimeMinutes ?? 0,
       events: events.map((event) => ({
@@ -1065,97 +1115,11 @@ export class AttendanceService {
         type: violation.violationType,
         minutesAffected: violation.minutesAffected,
         severity: violation.severity,
+        status: violation.status,
+        details: violation.details,
         detectedAt: violation.detectedAt,
       })),
     };
-  }
-
-  private async syncLateViolation(manager: EntityManager, record: AttendanceRecord) {
-    const repository = manager.getRepository(AttendanceViolation);
-    const existing = await repository.findOneBy({
-      employeeId: record.employeeId,
-      attendanceRecordId: record.id,
-      violationType: 'late',
-      violationDate: record.workDate,
-    });
-    if (!record.shiftAssignmentId || record.lateMinutes <= LATE_GRACE_MINUTES) {
-      if (existing) await repository.remove(existing);
-      return;
-    }
-    const violation = existing ?? repository.create({
-      employeeId: record.employeeId,
-      attendanceRecordId: record.id,
-      shiftAssignmentId: record.shiftAssignmentId,
-      violationType: 'late',
-      violationDate: record.workDate,
-      resolvedBy: null,
-      resolvedAt: null,
-      resolutionNote: null,
-    });
-    violation.minutesAffected = record.lateMinutes;
-    violation.severity = record.lateMinutes >= 60 ? 'critical' : 'warning';
-    violation.status = 'accepted';
-    violation.details = `Tự động ghi nhận check-in muộn ${record.lateMinutes} phút; thời gian cho phép là ${LATE_GRACE_MINUTES} phút.`;
-    violation.detectedAt = new Date();
-    await repository.save(violation);
-  }
-
-  private async syncBreakViolation(manager: EntityManager, record: AttendanceRecord) {
-    const repository = manager.getRepository(AttendanceViolation);
-    const existing = await repository.findOneBy({
-      employeeId: record.employeeId,
-      attendanceRecordId: record.id,
-      violationType: 'excessive_break',
-      violationDate: record.workDate,
-    });
-    const allowedMinutes = record.shiftAssignment?.shift.unpaidBreakMinutes ?? 0;
-    const minutesOver = Math.max(record.breakMinutes - allowedMinutes, 0);
-    if (!record.shiftAssignmentId || minutesOver === 0) {
-      if (existing) await repository.remove(existing);
-      return;
-    }
-    const violation = existing ?? repository.create({
-      employeeId: record.employeeId,
-      attendanceRecordId: record.id,
-      shiftAssignmentId: record.shiftAssignmentId,
-      violationType: 'excessive_break',
-      violationDate: record.workDate,
-      resolvedBy: null,
-      resolvedAt: null,
-      resolutionNote: null,
-    });
-    violation.minutesAffected = minutesOver;
-    violation.severity = minutesOver >= 30 ? 'critical' : 'warning';
-    violation.status = 'accepted';
-    violation.details = `Tự động ghi nhận nghỉ quá ${minutesOver} phút; thời lượng break của ca là ${allowedMinutes} phút.`;
-    violation.detectedAt = new Date();
-    await repository.save(violation);
-  }
-
-  private async syncMissingCheckoutViolation(manager: EntityManager, record: AttendanceRecord, detectedAt: Date) {
-    const repository = manager.getRepository(AttendanceViolation);
-    const existing = await repository.findOneBy({
-      employeeId: record.employeeId,
-      attendanceRecordId: record.id,
-      violationType: 'missing_check_out',
-      violationDate: record.workDate,
-    });
-    const violation = existing ?? repository.create({
-      employeeId: record.employeeId,
-      attendanceRecordId: record.id,
-      shiftAssignmentId: record.shiftAssignmentId,
-      violationType: 'missing_check_out',
-      violationDate: record.workDate,
-      resolvedBy: null,
-      resolvedAt: null,
-      resolutionNote: null,
-    });
-    violation.minutesAffected = 0;
-    violation.severity = 'warning';
-    violation.status = 'accepted';
-    violation.details = 'Tự động ghi nhận thiếu check-out khi phiên chấm công qua hết ngày làm việc.';
-    violation.detectedAt = detectedAt;
-    await repository.save(violation);
   }
 
   private groupBy<T>(items: T[], key: (item: T) => string) {
@@ -1231,7 +1195,7 @@ export class AttendanceService {
     const hasLatitude = dto.latitude !== undefined;
     const hasLongitude = dto.longitude !== undefined;
     if (hasLatitude !== hasLongitude) throw new BadRequestException('Vị trí chấm công chưa đầy đủ');
-    const geofenceConfigured = branch.latitude !== null && branch.longitude !== null;
+    const geofenceConfigured = branch.geofenceEnabled && branch.latitude !== null && branch.longitude !== null;
     const requiresGps = geofenceConfigured && ['mobile', 'web'].includes(method);
     if (requiresGps && (!hasLatitude || !hasLongitude)) {
       throw new BadRequestException('Chi nhánh yêu cầu bật GPS để chấm công');
@@ -1246,7 +1210,7 @@ export class AttendanceService {
     );
     const within = distance <= branch.geofenceRadiusM;
     if (!within && ['mobile', 'web'].includes(method)) {
-      throw new BadRequestException(`Bạn đang cách khu vực chấm công khoảng ${Math.round(distance)}m; phạm vi cho phép là ${branch.geofenceRadiusM}m`);
+      throw new OutsideGeofenceError(distance, branch.geofenceRadiusM);
     }
     return { distance, within };
   }
@@ -1258,7 +1222,6 @@ export class AttendanceService {
     if (dto.latitude === undefined || dto.longitude === undefined) {
       throw new BadRequestException('Bắt đầu và kết thúc nghỉ bắt buộc phải bật GPS');
     }
-    this.validateLocation(dto, branch, 'web');
   }
 
   private distanceInMeters(latitudeA: number, longitudeA: number, latitudeB: number, longitudeB: number) {

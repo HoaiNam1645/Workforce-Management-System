@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { formatDurationMinutes } from '@/lib/time-format';
 import {
   getLiveShifts,
   type LiveShiftBadge,
@@ -241,7 +242,7 @@ function ShiftDetail({ shift, employees, stateFilter, setStateFilter, lateGraceM
           <div className="grid grid-cols-2 gap-px bg-line text-center sm:grid-cols-4">
             <ShiftFact label="Bắt đầu" value={format(new Date(shift.startsAt), 'HH:mm')} />
             <ShiftFact label="Kết thúc" value={format(new Date(shift.endsAt), 'HH:mm')} />
-            <ShiftFact label="Break" value={`${shift.allowedBreakMinutes}p`} />
+            <ShiftFact label="Break" value={formatDurationMinutes(shift.allowedBreakMinutes)} />
             <ShiftFact label="Nhân sự" value={`${shift.assignedHeadcount}/${shift.requiredHeadcount}`} danger={shift.missingHeadcount > 0} />
           </div>
         </div>
@@ -275,9 +276,9 @@ function EmployeeRow({ item, shift, lateGraceMinutes }: { item: LiveShiftEmploye
   return (
     <tr className="align-middle hover:bg-canvas/45">
       <td className="px-5 py-4"><EmployeeIdentity item={item} /></td>
-      <td className="px-4 py-4"><p className="font-mono text-xs font-bold">{timeRange(shift.startsAt, shift.endsAt)}</p><p className="mt-1 text-[11px] text-muted">Break {shift.allowedBreakMinutes} phút</p></td>
-      <td className="px-4 py-4"><p className="font-mono text-xs font-bold">{clockValue(item.attendance.checkInAt)} → {clockValue(item.attendance.checkOutAt)}</p><p className={cn('mt-1 text-[11px]', item.attendance.breakMinutes > item.attendance.allowedBreakMinutes ? 'font-bold text-danger' : 'text-muted')}>Đã nghỉ {item.attendance.breakMinutes} phút</p></td>
-      <td className="px-4 py-4"><span className={cn('inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-extrabold uppercase', meta.className)}><meta.icon className="size-3.5" />{meta.label}</span>{item.attendance.lateMinutes > lateGraceMinutes && <p className="mt-1.5 text-[10px] font-bold text-warning-strong">Trễ {item.attendance.lateMinutes} phút</p>}</td>
+      <td className="px-4 py-4"><p className="font-mono text-xs font-bold">{timeRange(shift.startsAt, shift.endsAt)}</p><p className="mt-1 font-mono text-[11px] text-muted">Break {formatDurationMinutes(shift.allowedBreakMinutes)}</p></td>
+      <td className="px-4 py-4"><p className="font-mono text-xs font-bold">{clockValue(item.attendance.checkInAt)} → {clockValue(item.attendance.checkOutAt)}</p><p className={cn('mt-1 font-mono text-[11px]', item.attendance.breakMinutes > item.attendance.allowedBreakMinutes ? 'font-bold text-danger' : 'text-muted')}>Đã nghỉ {formatDurationMinutes(item.attendance.breakMinutes)}</p></td>
+      <td className="px-4 py-4"><span className={cn('inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-extrabold uppercase', meta.className)}><meta.icon className="size-3.5" />{meta.label}</span>{item.attendance.lateMinutes > lateGraceMinutes && <p className="mt-1.5 font-mono text-[10px] font-bold text-warning-strong">Trễ {formatDurationMinutes(item.attendance.lateMinutes)}</p>}</td>
       <td className="px-5 py-4"><BadgeList badges={item.badges} /></td>
     </tr>
   );
@@ -285,7 +286,7 @@ function EmployeeRow({ item, shift, lateGraceMinutes }: { item: LiveShiftEmploye
 
 function EmployeeMobileCard({ item, shift }: { item: LiveShiftEmployee; shift: LiveShiftItem }) {
   const meta = stateMeta[item.state];
-  return <div className="p-4"><div className="flex items-start justify-between gap-3"><EmployeeIdentity item={item} /><span className={cn('shrink-0 px-2 py-1 text-[9px] font-extrabold uppercase', meta.className)}>{meta.shortLabel}</span></div><div className="mt-4 grid grid-cols-2 gap-px bg-line"><ShiftFact label="Kế hoạch" value={timeRange(shift.startsAt, shift.endsAt)} /><ShiftFact label="Thực tế" value={`${clockValue(item.attendance.checkInAt)} → ${clockValue(item.attendance.checkOutAt)}`} /></div><div className="mt-3 flex items-center justify-between gap-3 text-xs"><span className="text-muted">Break {item.attendance.breakMinutes}/{item.attendance.allowedBreakMinutes} phút</span><BadgeList badges={item.badges} /></div></div>;
+  return <div className="p-4"><div className="flex items-start justify-between gap-3"><EmployeeIdentity item={item} /><span className={cn('shrink-0 px-2 py-1 text-[9px] font-extrabold uppercase', meta.className)}>{meta.shortLabel}</span></div><div className="mt-4 grid grid-cols-2 gap-px bg-line"><ShiftFact label="Kế hoạch" value={timeRange(shift.startsAt, shift.endsAt)} /><ShiftFact label="Thực tế" value={`${clockValue(item.attendance.checkInAt)} → ${clockValue(item.attendance.checkOutAt)}`} /></div><div className="mt-3 flex items-center justify-between gap-3 text-xs"><span className="font-mono text-muted">Break {formatDurationMinutes(item.attendance.breakMinutes)}/{formatDurationMinutes(item.attendance.allowedBreakMinutes)}</span><BadgeList badges={item.badges} /></div></div>;
 }
 
 function EmployeeIdentity({ item }: { item: LiveShiftEmployee }) {

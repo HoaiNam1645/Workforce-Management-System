@@ -124,6 +124,8 @@ export type AttendanceHistoryItem = {
     type: string;
     minutesAffected: number;
     severity: 'info' | 'warning' | 'critical';
+    status: AttendanceAnomalyStatus;
+    details: string | null;
     detectedAt: string;
   }>;
 };
@@ -334,4 +336,115 @@ export function getBranchGeofences() {
 
 export function updateBranchGeofence(id: string, payload: { enabled: boolean; latitude?: number; longitude?: number; radiusM: number }) {
   return apiRequest<BranchGeofenceSetting[]>(`/attendance/settings/branches/${id}/geofence`, { method: 'PATCH', body: JSON.stringify(payload) });
+}
+
+export type AttendanceAnomalyType = 'late' | 'early_leave' | 'missing_check_in' | 'missing_check_out' | 'absence' | 'outside_geofence' | 'excessive_break' | 'insufficient_hours' | 'outside_schedule';
+export type AttendanceAnomalyStatus = 'provisional' | 'active' | 'cleared' | 'excluded';
+
+export type AttendanceAnomalyItem = {
+  id: string;
+  type: AttendanceAnomalyType;
+  date: string;
+  status: AttendanceAnomalyStatus;
+  severity: 'info' | 'warning' | 'critical';
+  minutesAffected: number;
+  details: string | null;
+  detectedAt: string;
+  lastDetectedAt: string;
+  scheduledStartAt: string | null;
+  scheduledEndAt: string | null;
+  actualStartAt: string | null;
+  actualEndAt: string | null;
+  employee: { id: string; employeeCode: string; fullName: string; branch: { id: string; name: string }; department: { id: string; name: string } };
+  shift: { id: string; name: string; startsAt: string; endsAt: string } | null;
+  attendanceRecordId: string | null;
+};
+
+export type AttendanceAnomalyOverview = {
+  summary: {
+    totalActive: number;
+    provisional: number;
+    affectedEmployees: number;
+    minutesAffected: number;
+    critical: number;
+    types: Record<AttendanceAnomalyType, number>;
+  };
+  pagination: { page: number; pageSize: number; total: number; pages: number };
+  items: AttendanceAnomalyItem[];
+};
+
+export type AttendanceAnomalyDetail = AttendanceAnomalyItem & {
+  graceMinutes: number;
+  calculationVersion: number;
+  calculation: Record<string, unknown>;
+  exclusion: { by: string | null; at: string | null; reason: string | null };
+  events: Array<{ id: string; type: AttendanceEventType; occurredAt: string; method: string; deviceId: string | null; photoUrl: string | null; latitude: number | null; longitude: number | null; accuracyM: number | null; distanceM: number | null; withinGeofence: boolean | null; rejected: boolean; rejectionReason: string | null }>;
+  geofence: { latitude: number | null; longitude: number | null; radiusM: number } | null;
+  history: Array<{ id: string; eventType: string; oldValues: Record<string, unknown> | null; newValues: Record<string, unknown> | null; source: string; reason: string | null; actor: string; createdAt: string }>;
+};
+
+export type AttendanceAnomalySettings = {
+  id: string;
+  lateGraceMinutes: number;
+  earlyLeaveGraceMinutes: number;
+  insufficientToleranceMinutes: number;
+  missingCheckInReminderMinutes: number;
+  maxLocationAccuracyM: number;
+  lateCriticalMinutes: number;
+  earlyLeaveCriticalMinutes: number;
+  breakCriticalMinutes: number;
+  insufficientCriticalMinutes: number;
+};
+
+function anomalyQuery(filters: Record<string, string | number | undefined>) {
+  const query = new URLSearchParams();
+  Object.entries(filters).forEach(([key, value]) => { if (value !== undefined && value !== '') query.set(key, String(value)); });
+  return query;
+}
+
+export function getAttendanceAnomalies(filters: Record<string, string | number | undefined>) {
+  const query = anomalyQuery(filters);
+  return apiRequest<AttendanceAnomalyOverview>(`/attendance/anomalies?${query}`);
+}
+
+export function getMyAttendanceAnomalies(filters: Record<string, string | number | undefined>) {
+  const query = anomalyQuery(filters);
+  return apiRequest<AttendanceAnomalyOverview>(`/attendance/me/anomalies?${query}`);
+}
+
+export function getAttendanceAnomalyOptions() {
+  return apiRequest<{ employees: Array<{ id: string; employeeCode: string; fullName: string }>; branches: Array<{ id: string; name: string }>; departments: Array<{ id: string; name: string }> }>('/attendance/anomalies/options');
+}
+
+export function getAttendanceAnomalyDetail(id: string) {
+  return apiRequest<AttendanceAnomalyDetail>(`/attendance/anomalies/${id}`);
+}
+
+export function getAttendanceAnomalyStatistics(filters: Record<string, string | number | undefined>) {
+  const query = anomalyQuery(filters);
+  return apiRequest<{ scheduledShifts: number; absence: number; absenceRate: number; byType: Array<{ type: AttendanceAnomalyType; count: number; minutes: number; employees: number }>; daily: Array<{ date: string; count: number; late: number; absence: number }> }>(`/attendance/anomalies/statistics?${query}`);
+}
+
+export function excludeAttendanceAnomaly(id: string, reason: string) {
+  return apiRequest<AttendanceAnomalyDetail>(`/attendance/anomalies/${id}/exclude`, { method: 'POST', body: JSON.stringify({ reason }) });
+}
+
+export function restoreAttendanceAnomaly(id: string) {
+  return apiRequest<AttendanceAnomalyDetail>(`/attendance/anomalies/${id}/restore`, { method: 'POST' });
+}
+
+export function recalculateAttendanceAnomaly(id: string) {
+  return apiRequest<AttendanceAnomalyDetail>(`/attendance/anomalies/${id}/recalculate`, { method: 'POST' });
+}
+
+export function recalculateAllAttendanceAnomalies() {
+  return apiRequest<{ recalculatedRecords: number; completedAt: string }>('/attendance/anomalies/recalculate-all', { method: 'POST' });
+}
+
+export function getAttendanceAnomalySettings() {
+  return apiRequest<AttendanceAnomalySettings>('/attendance/anomaly-settings');
+}
+
+export function updateAttendanceAnomalySettings(payload: Omit<AttendanceAnomalySettings, 'id'>) {
+  return apiRequest<AttendanceAnomalySettings>('/attendance/anomaly-settings', { method: 'PATCH', body: JSON.stringify(payload) });
 }

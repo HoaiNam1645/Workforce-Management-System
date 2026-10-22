@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { differenceInSeconds, format, intervalToDuration } from 'date-fns';
+import { differenceInSeconds, format } from 'date-fns';
 import { vi } from 'date-fns/locale';
 import {
   ArrowRight,
@@ -34,6 +34,7 @@ import {
   type MyAttendance,
 } from '@/lib/attendance-api';
 import { cn } from '@/lib/utils';
+import { formatDurationMinutes, formatDurationSeconds } from '@/lib/time-format';
 import { AttendanceSelfie } from './attendance-selfie';
 import { AttendanceHistory } from './attendance-history';
 import { SelfieCaptureDialog } from './selfie-capture-dialog';
@@ -44,6 +45,9 @@ const EmployeeLocationMap = dynamic(() => import('./employee-location-map'), {
 });
 
 type EmployeeLocation = { latitude: number; longitude: number; accuracyM: number; updatedAt: Date };
+
+const LOCATION_FRESHNESS_MS = 2 * 60 * 1000;
+const LOCATION_CACHE_MS = 5 * 60 * 1000;
 
 const actionLabels: Record<AttendanceEventType, string> = {
   check_in: 'Check-in',
@@ -62,23 +66,58 @@ function getDeviceId() {
   return id;
 }
 
-function getCurrentPosition() {
+function requestPosition(options: PositionOptions) {
   return new Promise<GeolocationPosition>((resolve, reject) => {
     if (!navigator.geolocation) {
       reject(new Error('Trình duyệt không hỗ trợ định vị GPS'));
       return;
     }
-    navigator.geolocation.getCurrentPosition(resolve, () => reject(new Error('Không thể lấy vị trí. Hãy bật GPS và cấp quyền vị trí cho trình duyệt.')), {
-      enableHighAccuracy: true,
-      timeout: 15_000,
-      maximumAge: 10_000,
-    });
+    navigator.geolocation.getCurrentPosition(resolve, reject, options);
   });
 }
 
+function isGeolocationError(error: unknown): error is GeolocationPositionError {
+  return typeof error === 'object' && error !== null && 'code' in error;
+}
+
+function locationErrorMessage(error: unknown) {
+  if (!window.isSecureContext) {
+    return 'Định vị chỉ hoạt động trên HTTPS hoặc localhost.';
+  }
+  if (!isGeolocationError(error)) {
+    return error instanceof Error ? error.message : 'Không thể lấy vị trí hiện tại.';
+  }
+  if (error.code === 1) {
+    return 'Quyền vị trí đang bị chặn. Hãy bấm biểu tượng bên trái thanh địa chỉ, cho phép Vị trí rồi thử lại.';
+  }
+  if (error.code === 2) {
+    return 'Thiết bị chưa xác định được vị trí. Hãy bật Dịch vụ định vị và Wi-Fi rồi thử lại.';
+  }
+  return 'Lấy vị trí quá lâu. Hãy kiểm tra Dịch vụ định vị rồi thử lại.';
+}
+
+async function getCurrentPosition() {
+  try {
+    // A cached/network fix is substantially more reliable on laptops. The
+    // high-accuracy watcher below will replace it as soon as a better fix arrives.
+    return await requestPosition({ enableHighAccuracy: false, timeout: 12_000, maximumAge: LOCATION_CACHE_MS });
+  } catch (error) {
+    if (isGeolocationError(error) && error.code === 1) throw error;
+    return requestPosition({ enableHighAccuracy: true, timeout: 30_000, maximumAge: 30_000 });
+  }
+}
+
+function toEmployeeLocation(position: GeolocationPosition): EmployeeLocation {
+  return {
+    latitude: position.coords.latitude,
+    longitude: position.coords.longitude,
+    accuracyM: position.coords.accuracy,
+    updatedAt: new Date(position.timestamp),
+  };
+}
+
 function durationText(totalSeconds: number) {
-  const duration = intervalToDuration({ start: 0, end: Math.max(totalSeconds, 0) * 1000 });
-  return `${String(duration.hours ?? 0).padStart(2, '0')}:${String(duration.minutes ?? 0).padStart(2, '0')}:${String(duration.seconds ?? 0).padStart(2, '0')}`;
+  return formatDurationSeconds(totalSeconds);
 }
 
 function completedBreakSeconds(events: MyAttendance['events'], now: Date) {
@@ -126,20 +165,43 @@ export function MobileTimeClock() {
       setLocating(false);
       return;
     }
-    setLocating(true);
+    let active = true;
+
+    void getCurrentPosition()
+      .then((position) => {
+        if (!active) return;
+        setEmployeeLocation(toEmployeeLocation(position));
+        setLocationError('');
+      })
+      .catch((error) => {
+        if (active) setLocationError(locationErrorMessage(error));
+      })
+      .finally(() => {
+        if (active) setLocating(false);
+      });
+
     const watchId = navigator.geolocation.watchPosition(
       (position) => {
-        setEmployeeLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude, accuracyM: position.coords.accuracy, updatedAt: new Date(position.timestamp) });
+        setEmployeeLocation(toEmployeeLocation(position));
         setLocationError('');
         setLocating(false);
       },
       (error) => {
-        setLocationError(error.code === error.PERMISSION_DENIED ? 'Bạn phải cấp quyền vị trí để xem phạm vi và thực hiện chấm công.' : 'Không thể xác định vị trí hiện tại. Hãy bật GPS và thử lại.');
-        setLocating(false);
+        // Keep a usable location when a later high-accuracy refresh fails.
+        setEmployeeLocation((current) => {
+          if (!current) {
+            setLocationError(locationErrorMessage(error));
+            setLocating(false);
+          }
+          return current;
+        });
       },
-      { enableHighAccuracy: true, timeout: 15_000, maximumAge: 5_000 },
+      { enableHighAccuracy: true, timeout: 30_000, maximumAge: 30_000 },
     );
-    return () => navigator.geolocation.clearWatch(watchId);
+    return () => {
+      active = false;
+      navigator.geolocation.clearWatch(watchId);
+    };
   }, []);
 
   const refreshLocation = async () => {
@@ -147,9 +209,9 @@ export function MobileTimeClock() {
     setLocationError('');
     try {
       const position = await getCurrentPosition();
-      setEmployeeLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude, accuracyM: position.coords.accuracy, updatedAt: new Date(position.timestamp) });
+      setEmployeeLocation(toEmployeeLocation(position));
     } catch (error) {
-      setLocationError(error instanceof Error ? error.message : 'Không thể lấy vị trí hiện tại.');
+      setLocationError(locationErrorMessage(error));
     } finally {
       setLocating(false);
     }
@@ -160,11 +222,26 @@ export function MobileTimeClock() {
       deviceId: getDeviceId(),
       outsideScheduleReason: outsideScheduleReason.trim() || undefined,
     };
+    const cachedLocationIsFresh =
+      employeeLocation &&
+      Date.now() - employeeLocation.updatedAt.getTime() <= LOCATION_FRESHNESS_MS;
+
+    // The location watcher already keeps this value current. Reusing it avoids a
+    // second browser GPS request timing out while the camera is open.
+    if (cachedLocationIsFresh) {
+      payload.latitude = employeeLocation.latitude;
+      payload.longitude = employeeLocation.longitude;
+      payload.locationAccuracyM = employeeLocation.accuracyM;
+      return payload;
+    }
+
     const position = await getCurrentPosition();
-    payload.latitude = position.coords.latitude;
-    payload.longitude = position.coords.longitude;
-    payload.locationAccuracyM = position.coords.accuracy;
-    setEmployeeLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude, accuracyM: position.coords.accuracy, updatedAt: new Date(position.timestamp) });
+    const nextLocation = toEmployeeLocation(position);
+    payload.latitude = nextLocation.latitude;
+    payload.longitude = nextLocation.longitude;
+    payload.locationAccuracyM = nextLocation.accuracyM;
+    setEmployeeLocation(nextLocation);
+    setLocationError('');
     return payload;
   };
   const mutationOptions = {
@@ -198,8 +275,8 @@ export function MobileTimeClock() {
 
   const stateContent = {
     not_started: { label: 'Chưa bắt đầu', detail: data.shift ? 'Bạn có thể check-in cho ca sắp tới.' : 'Hiện chưa có ca phù hợp để chấm công.', tone: 'bg-canvas text-muted', dot: 'bg-muted' },
-    working: { label: 'Đang làm việc', detail: 'Phiên làm việc đang được ghi nhận.', tone: 'bg-success-soft text-success', dot: 'bg-success' },
-    on_break: { label: 'Đang nghỉ', detail: 'Thời gian nghỉ đang được tính.', tone: 'bg-warning-soft text-warning', dot: 'bg-warning' },
+    working: { label: 'Đang làm việc', detail: 'Bạn đã check-in.', tone: 'bg-success-soft text-success', dot: 'bg-success' },
+    on_break: { label: 'Đang nghỉ', detail: 'Bạn đang trong thời gian nghỉ.', tone: 'bg-warning-soft text-warning', dot: 'bg-warning' },
     completed: { label: 'Đã check-out', detail: 'Phiên làm việc gần nhất đã hoàn thành.', tone: 'bg-info-soft text-brand', dot: 'bg-brand' },
   }[data.state];
   const allowedBreakSeconds = (data.shift?.unpaidBreakMinutes ?? 0) * 60;
@@ -233,11 +310,11 @@ export function MobileTimeClock() {
           {data.shift ? <div className="grid gap-4 border-b border-line pb-6 sm:grid-cols-[1fr_auto] sm:items-center">
             <div className="min-w-0"><div className="flex items-center gap-2"><BriefcaseBusiness className="size-4 text-brand" /><p className="truncate font-extrabold">{data.shift.name}</p></div><p className="mt-2 flex items-start gap-2 text-sm text-muted"><MapPin className="mt-0.5 size-4 shrink-0" /><span>{data.shift.branch.name} · {data.shift.branch.address}</span></p></div>
             <div className="border-l-2 border-line pl-4"><p className="font-mono text-lg font-bold">{format(new Date(data.shift.startsAt), 'HH:mm')} – {format(new Date(data.shift.endsAt), 'HH:mm')}</p><p className="mt-1 text-[11px] font-bold text-muted">CA ĐÃ CÔNG BỐ</p></div>
-          </div> : <div className="border-b border-line pb-6"><p className="font-extrabold">Chấm công ngoài lịch</p><p className="mt-2 text-sm text-muted">Không có ca đã công bố phù hợp. Phiên này sẽ được đánh dấu ngoài lịch để quản lý kiểm tra.</p>{data.requiresOutsideScheduleReason && <label className="mt-4 block"><span className="text-[10px] font-extrabold uppercase tracking-wide text-muted">Lý do làm việc ngoài lịch</span><textarea value={outsideScheduleReason} onChange={(event) => setOutsideScheduleReason(event.target.value)} rows={3} maxLength={500} placeholder="Ví dụ: Quản lý yêu cầu hỗ trợ ca sáng..." className="mt-2 w-full resize-none border border-line bg-white px-3 py-2.5 text-sm outline-none transition focus:border-brand" /></label>}</div>}
+          </div> : <div className="border-b border-line pb-6"><p className="font-extrabold">Chấm công ngoài lịch</p><p className="mt-2 text-sm text-muted">Hiện không có ca làm phù hợp.</p>{data.requiresOutsideScheduleReason && <label className="mt-4 block"><span className="text-[10px] font-extrabold uppercase tracking-wide text-muted">Lý do làm việc ngoài lịch</span><textarea value={outsideScheduleReason} onChange={(event) => setOutsideScheduleReason(event.target.value)} rows={3} maxLength={500} placeholder="Ví dụ: Hỗ trợ ca sáng..." className="mt-2 w-full resize-none border border-line bg-white px-3 py-2.5 text-sm outline-none transition focus:border-brand" /></label>}</div>}
 
-          {data.record && data.record.lateMinutes > 0 && <div className={cn('mt-5 flex items-start gap-3 border p-4', data.record.isLate ? 'border-warning/30 bg-warning-soft' : 'border-line bg-canvas')}><AlertTriangle className={cn('mt-0.5 size-5 shrink-0', data.record.isLate ? 'text-warning' : 'text-muted')} /><div><p className="text-sm font-extrabold">{data.record.isLate ? `Đã ghi nhận đi muộn ${data.record.lateMinutes} phút` : `Check-in muộn ${data.record.lateMinutes} phút`}</p><p className="mt-1 text-xs leading-5 text-muted">{data.record.isLate ? `Bạn đã vượt thời gian cho phép ${data.record.lateGraceMinutes} phút. Vi phạm được tự động lưu, không cần giải trình.` : `Bạn vẫn nằm trong thời gian cho phép ${data.record.lateGraceMinutes} phút.`}</p></div></div>}
+          {data.record && data.record.lateMinutes > 0 && <div className={cn('mt-5 flex items-start gap-3 border p-4', data.record.isLate ? 'border-warning/30 bg-warning-soft' : 'border-line bg-canvas')}><AlertTriangle className={cn('mt-0.5 size-5 shrink-0', data.record.isLate ? 'text-warning' : 'text-muted')} /><div><p className="text-sm font-extrabold">Đi muộn {formatDurationMinutes(data.record.lateMinutes)}</p><p className="mt-1 text-xs leading-5 text-muted">Mốc cho phép: {formatDurationMinutes(data.record.lateGraceMinutes)}</p></div></div>}
 
-          {breakOverMinutes > 0 && <div className="mt-5 flex items-start gap-3 border border-warning/30 bg-warning-soft p-4"><AlertTriangle className="mt-0.5 size-5 shrink-0 text-warning" /><div><p className="text-sm font-extrabold">Nghỉ quá thời gian {breakOverMinutes} phút</p><p className="mt-1 text-xs leading-5 text-muted">Ca này cho phép nghỉ {data.shift?.unpaidBreakMinutes ?? 0} phút. {data.state === 'on_break' ? 'Hãy kết thúc break để quay lại làm việc.' : 'Cảnh báo đã được hệ thống tự động ghi nhận.'}</p></div></div>}
+          {breakOverMinutes > 0 && <div className="mt-5 flex items-start gap-3 border border-warning/30 bg-warning-soft p-4"><AlertTriangle className="mt-0.5 size-5 shrink-0 text-warning" /><div><p className="text-sm font-extrabold">Nghỉ quá thời gian {formatDurationMinutes(breakOverMinutes)}</p><p className="mt-1 text-xs leading-5 text-muted">Thời gian nghỉ của ca: {formatDurationMinutes(data.shift?.unpaidBreakMinutes ?? 0)}{data.state === 'on_break' ? ' · Hãy kết thúc nghỉ để quay lại làm việc.' : ''}</p></div></div>}
 
           <div className="grid grid-cols-2 divide-x divide-line border-b border-line py-6">
             <Metric label="Thời gian làm" value={durationText(elapsedSeconds)} icon={Clock3} />
@@ -247,7 +324,7 @@ export function MobileTimeClock() {
           <div className="pt-6">
             {data.allowedActions.checkIn && <Button size="lg" variant="brand" className="h-14 w-full text-base" disabled={isMutating || !gpsReady || (data.requiresOutsideScheduleReason && outsideScheduleReason.trim().length < 5)} onClick={() => setSelfieAction('check_in')}><Camera className="size-5" />{data.requiresOutsideScheduleReason ? 'Chụp selfie và check-in ngoài lịch' : 'Chụp selfie và check-in'}<ArrowRight className="ml-auto size-5" /></Button>}
             {data.state === 'working' && <div className={cn('grid gap-3', data.allowedActions.startBreak && 'sm:grid-cols-2')}>{data.allowedActions.startBreak && <Button size="lg" variant="outline" className="h-14" loading={startBreakMutation.isPending} loadingText="Đang lấy GPS và bắt đầu nghỉ..." disabled={isMutating || !gpsReady} onClick={() => startBreakMutation.mutate()}><Coffee className="size-5" />Bắt đầu nghỉ · GPS</Button>}<Button size="lg" variant="brand" className="h-14" disabled={isMutating || !gpsReady} onClick={() => setSelfieAction('check_out')}><Camera className="size-5" />Chụp selfie và check-out</Button></div>}
-            {data.state === 'working' && hasUsedBreak && <div className="mt-3 flex items-start gap-2 border border-line bg-canvas p-3 text-xs text-muted"><Check className="mt-0.5 size-4 shrink-0 text-success" /><span>Bạn đã sử dụng một lần nghỉ của ca này. Hệ thống không cho bắt đầu thêm break.</span></div>}
+            {data.state === 'working' && hasUsedBreak && <div className="mt-3 flex items-start gap-2 border border-line bg-canvas p-3 text-xs text-muted"><Check className="mt-0.5 size-4 shrink-0 text-success" /><span>Đã sử dụng thời gian nghỉ của ca này.</span></div>}
             {data.allowedActions.endBreak && <Button size="lg" variant="brand" className="h-14 w-full text-base" loading={endBreakMutation.isPending} loadingText="Đang lấy GPS và kết thúc nghỉ..." disabled={!gpsReady} onClick={() => endBreakMutation.mutate()}><Navigation className="size-5" />Kết thúc nghỉ tại khu vực làm việc</Button>}
             {!data.allowedActions.checkIn && !data.allowedActions.checkOut && !data.allowedActions.startBreak && !data.allowedActions.endBreak && <div className="flex items-center gap-3 border border-line bg-canvas p-4"><span className="grid size-9 place-items-center bg-success-soft text-success"><Check className="size-4" /></span><div><p className="text-sm font-extrabold">Không có thao tác cần thực hiện</p><p className="mt-1 text-xs text-muted">Trạng thái sẽ tự cập nhật khi ca tiếp theo đến gần.</p></div></div>}
           </div>
@@ -255,8 +332,8 @@ export function MobileTimeClock() {
       </main>
 
       <aside className="min-w-0 space-y-5">
-        <section className="overflow-hidden border border-line bg-surface shadow-panel"><header className="flex items-center justify-between border-b border-line px-4 py-3"><div><p className="text-sm font-extrabold">Vị trí chấm công</p><p className="mt-0.5 text-[11px] text-muted">GPS được lấy tự động từ thiết bị này</p></div><Navigation className={cn('size-4', withinGeofence === false ? 'text-danger' : 'text-success')} /></header>{data.clockLocation.geofenceRequired && data.clockLocation.latitude !== null && data.clockLocation.longitude !== null && employeeLocation ? <><div className="h-72"><EmployeeLocationMap branchLatitude={data.clockLocation.latitude} branchLongitude={data.clockLocation.longitude} radiusM={data.clockLocation.geofenceRadiusM} employeeLatitude={employeeLocation.latitude} employeeLongitude={employeeLocation.longitude} accuracyM={employeeLocation.accuracyM} withinGeofence={withinGeofence === true} /></div><div className={cn('border-t p-4', withinGeofence ? 'border-success/20 bg-success-soft' : 'border-danger/20 bg-danger-soft')}><p className={cn('text-sm font-extrabold', withinGeofence ? 'text-success' : 'text-danger')}>{withinGeofence ? 'Bạn đang trong khu vực chấm công' : 'Bạn đang ngoài khu vực chấm công'}</p><p className="mt-1 text-xs text-muted">Cách tâm chi nhánh khoảng {Math.round(distanceFromBranch ?? 0)}m · độ chính xác GPS ±{Math.round(employeeLocation.accuracyM)}m</p></div></> : <div className="p-5">{locating ? <p className="flex items-center gap-2 text-sm font-bold text-muted"><LoaderCircle className="size-4 animate-spin text-brand" />Đang lấy vị trí bắt buộc...</p> : <><p className="text-sm font-extrabold text-danger">Chưa xác định được vị trí</p><p className="mt-2 text-xs leading-5 text-muted">{locationError || (data.clockLocation.geofenceRequired ? 'Hãy bật GPS để hệ thống đối chiếu khu vực.' : 'Chi nhánh chưa cấu hình tâm geofence.')}</p><Button size="sm" variant="outline" className="mt-3" onClick={refreshLocation}><LocateFixed className="size-4" />Lấy lại vị trí</Button></>}</div>}</section>
-        <section className="border border-line bg-surface shadow-panel"><header className="flex items-center justify-between border-b border-line px-4 py-3"><div><p className="text-sm font-extrabold">Hoạt động phiên này</p><p className="mt-0.5 text-[11px] text-muted">Dữ liệu được ghi nhận theo thời gian thực</p></div><ShieldCheck className="size-4 text-success" /></header>
+        <section className="overflow-hidden border border-line bg-surface shadow-panel"><header className="flex items-center justify-between border-b border-line px-4 py-3"><div><p className="text-sm font-extrabold">Vị trí chấm công</p><p className="mt-0.5 text-[11px] text-muted">GPS được lấy tự động từ thiết bị này</p></div><Navigation className={cn('size-4', employeeLocation ? (withinGeofence === false ? 'text-danger' : 'text-success') : 'text-muted')} /></header>{employeeLocation ? <><div className="h-72"><EmployeeLocationMap branchLatitude={data.clockLocation.geofenceRequired ? data.clockLocation.latitude : null} branchLongitude={data.clockLocation.geofenceRequired ? data.clockLocation.longitude : null} radiusM={data.clockLocation.geofenceRadiusM} employeeLatitude={employeeLocation.latitude} employeeLongitude={employeeLocation.longitude} accuracyM={employeeLocation.accuracyM} withinGeofence={data.clockLocation.geofenceRequired ? withinGeofence : null} /></div>{data.clockLocation.geofenceRequired && data.clockLocation.latitude !== null && data.clockLocation.longitude !== null ? <div className={cn('border-t p-4', withinGeofence ? 'border-success/20 bg-success-soft' : 'border-danger/20 bg-danger-soft')}><p className={cn('text-sm font-extrabold', withinGeofence ? 'text-success' : 'text-danger')}>{withinGeofence ? 'Bạn đang trong khu vực chấm công' : 'Bạn đang ngoài khu vực chấm công'}</p><p className="mt-1 text-xs text-muted">Cách tâm chi nhánh khoảng {Math.round(distanceFromBranch ?? 0)}m · độ chính xác GPS ±{Math.round(employeeLocation.accuracyM)}m</p></div> : <div className="border-t border-success/20 bg-success-soft p-4"><p className="flex items-center gap-2 text-sm font-extrabold text-success"><Check className="size-4" />Đã lấy được vị trí</p><p className="mt-1 text-xs leading-5 text-muted">Độ chính xác GPS ±{Math.round(employeeLocation.accuracyM)}m. Chi nhánh chưa bật giới hạn khu vực chấm công.</p><Button size="sm" variant="outline" className="mt-3 bg-white" loading={locating} loadingText="Đang cập nhật..." onClick={refreshLocation}><LocateFixed className="size-4" />Cập nhật vị trí</Button></div>}</> : <div className="p-5">{locating ? <p className="flex items-center gap-2 text-sm font-bold text-muted"><LoaderCircle className="size-4 animate-spin text-brand" />Đang lấy vị trí...</p> : <><p className="text-sm font-extrabold text-danger">Chưa lấy được vị trí</p><p className="mt-2 text-xs leading-5 text-muted">{locationError || 'Hãy bật Dịch vụ định vị và cấp quyền vị trí cho trình duyệt.'}</p><Button size="sm" variant="outline" className="mt-3" onClick={refreshLocation}><LocateFixed className="size-4" />Thử lại</Button></>}</div>}</section>
+        <section className="border border-line bg-surface shadow-panel"><header className="flex items-center justify-between border-b border-line px-4 py-3"><div><p className="text-sm font-extrabold">Hoạt động phiên này</p><p className="mt-0.5 text-[11px] text-muted">Check-in, nghỉ và check-out</p></div><ShieldCheck className="size-4 text-success" /></header>
           {data.events.length ? <div className="divide-y divide-line">{[...data.events].reverse().map((event, index) => <div key={event.id} className="flex items-center gap-3 px-4 py-3">{event.photoUrl ? <AttendanceSelfie path={event.photoUrl} alt={`Selfie ${actionLabels[event.type]}`} className="size-9" /> : <span className={cn('grid size-8 place-items-center border', index === 0 ? 'border-brand/20 bg-info-soft text-brand' : 'border-line bg-canvas text-muted')}><EventIcon type={event.type} /></span>}<div className="min-w-0 flex-1"><p className="text-xs font-extrabold">{actionLabels[event.type]}</p><p className="mt-0.5 text-[10px] uppercase tracking-wide text-muted">{event.method === 'mobile' ? 'Điện thoại' : 'Trình duyệt'}{event.photoUrl ? ' · Có selfie' : ''}</p></div><time className="font-mono text-xs font-bold">{format(new Date(event.occurredAt), 'HH:mm:ss')}</time></div>)}</div> : <div className="p-7 text-center"><Clock3 className="mx-auto size-5 text-muted" /><p className="mt-3 text-sm font-bold">Chưa có hoạt động</p><p className="mt-1 text-xs text-muted">Sự kiện sẽ xuất hiện sau khi bạn check-in.</p></div>}
         </section>
 

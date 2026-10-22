@@ -217,6 +217,7 @@ export type ScheduleValidation = {
   shiftCount: number;
   conflicts: Array<{ employeeId: string; employeeName: string; firstShiftId: string; secondShiftId: string }>;
   understaffed: Array<{ id: string; name: string; startsAt: string; assigned: number; required: number }>;
+  pastDrafts: Array<{ id: string; name: string; startsAt: string; endsAt: string }>;
 };
 
 export type ScheduleTemplate = {

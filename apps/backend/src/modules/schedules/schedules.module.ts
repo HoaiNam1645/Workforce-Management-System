@@ -14,6 +14,9 @@ import { LeaveRequest } from '../leave/entities/leave-request.entity';
 import { Notification } from '../notifications/entities/notification.entity';
 import { SchedulesController } from './schedules.controller';
 import { SchedulesService } from './schedules.service';
+import { ShiftSwapsService } from './shift-swaps.service';
+import { ShiftSwapHistory } from './entities/shift-swap-history.entity';
+import { AttendanceRecord } from '../attendance/entities/attendance-record.entity';
 
 const entities = [
   ShiftTemplate,
@@ -22,18 +25,20 @@ const entities = [
   Shift,
   ShiftAssignment,
   ShiftSwapRequest,
+  ShiftSwapHistory,
   Branch,
   Department,
   Position,
   Employee,
   LeaveRequest,
   Notification,
+  AttendanceRecord,
 ];
 
 @Module({
   imports: [TypeOrmModule.forFeature(entities)],
   controllers: [SchedulesController],
-  providers: [SchedulesService],
+  providers: [SchedulesService, ShiftSwapsService],
   exports: [TypeOrmModule, SchedulesService],
 })
 export class SchedulesModule {}

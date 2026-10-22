@@ -14,10 +14,52 @@ import { CopyScheduleDto } from './dto/copy-schedule.dto';
 import { PublishScheduleDto, ScheduleRangeDto } from './dto/schedule-range.dto';
 import { ApplyScheduleTemplateDto, CreateScheduleTemplateDto, SaveScheduleTemplateFromRangeDto } from './dto/schedule-template.dto';
 import { SchedulesService } from './schedules.service';
+import { ShiftSwapsService } from './shift-swaps.service';
+import { CreateShiftSwapDto, ShiftSwapActionDto, ShiftSwapQueryDto } from './dto/shift-swap.dto';
 
 @Controller('schedules')
 export class SchedulesController {
-  constructor(private readonly schedulesService: SchedulesService) {}
+  constructor(private readonly schedulesService: SchedulesService, private readonly shiftSwapsService: ShiftSwapsService) {}
+
+  @Get('shift-swaps/options')
+  @RequirePermissions('shift_swaps.request')
+  getShiftSwapOptions(@CurrentUser() user: AuthUser) { return this.shiftSwapsService.getOptions(user); }
+
+  @Get('shift-swaps/mine')
+  @RequirePermissions('shift_swaps.request')
+  getMyShiftSwaps(@Query() query: ShiftSwapQueryDto, @CurrentUser() user: AuthUser) { return this.shiftSwapsService.findMine(query, user); }
+
+  @Get('shift-swaps/review')
+  @RequirePermissions('shift_swaps.approve')
+  getShiftSwapsForReview(@Query() query: ShiftSwapQueryDto, @CurrentUser() user: AuthUser) { return this.shiftSwapsService.findForReview(query, user); }
+
+  @Post('shift-swaps')
+  @RequirePermissions('shift_swaps.request')
+  createShiftSwap(@Body() dto: CreateShiftSwapDto, @CurrentUser() user: AuthUser) { return this.shiftSwapsService.create(dto, user); }
+
+  @Patch('shift-swaps/:id/accept')
+  @RequirePermissions('shift_swaps.request')
+  acceptShiftSwap(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ShiftSwapActionDto, @CurrentUser() user: AuthUser) { return this.shiftSwapsService.respond(id, true, dto, user); }
+
+  @Patch('shift-swaps/:id/decline')
+  @RequirePermissions('shift_swaps.request')
+  declineShiftSwap(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ShiftSwapActionDto, @CurrentUser() user: AuthUser) { return this.shiftSwapsService.respond(id, false, dto, user); }
+
+  @Patch('shift-swaps/:id/approve')
+  @RequirePermissions('shift_swaps.approve')
+  approveShiftSwap(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ShiftSwapActionDto, @CurrentUser() user: AuthUser) { return this.shiftSwapsService.review(id, true, dto, user); }
+
+  @Patch('shift-swaps/:id/reject')
+  @RequirePermissions('shift_swaps.approve')
+  rejectShiftSwap(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ShiftSwapActionDto, @CurrentUser() user: AuthUser) { return this.shiftSwapsService.review(id, false, dto, user); }
+
+  @Patch('shift-swaps/:id/cancel')
+  @RequirePermissions('shift_swaps.request')
+  cancelShiftSwap(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ShiftSwapActionDto, @CurrentUser() user: AuthUser) { return this.shiftSwapsService.cancel(id, dto, user); }
+
+  @Get('shift-swaps/:id/history')
+  @RequirePermissions('shift_swaps.request')
+  getShiftSwapHistory(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) { return this.shiftSwapsService.history(id, user); }
 
   @Get('options')
   @RequirePermissions('schedules.view')

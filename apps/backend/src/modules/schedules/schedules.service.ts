@@ -224,7 +224,7 @@ export class SchedulesService {
     const endsAt = dto.endsAt ?? shift.endsAt.toISOString();
     const breakMinutes = dto.unpaidBreakMinutes ?? shift.unpaidBreakMinutes;
     this.validateTimes(startsAt, endsAt, breakMinutes);
-    if (new Date(startsAt) <= new Date()) {
+    if (shift.status !== 'draft' && new Date(startsAt) <= new Date()) {
       throw new BadRequestException('Không thể chuyển ca về thời điểm đã bắt đầu hoặc trong quá khứ');
     }
     if (dto.startsAt !== undefined || dto.endsAt !== undefined) {
@@ -662,15 +662,20 @@ export class SchedulesService {
 
   async validateSchedule(dto: ScheduleRangeDto, actor: AuthUser) {
     const shifts = await this.scopedShiftsInRange(dto.from, dto.to, dto.branchId, actor);
+    const now = new Date();
     const counts = await this.getAssignmentCounts(shifts.map((shift) => shift.id));
     const understaffed = shifts.filter((shift) => (counts.get(shift.id) ?? 0) < shift.requiredHeadcount).map((shift) => ({ id: shift.id, name: shift.name, startsAt: shift.startsAt, assigned: counts.get(shift.id) ?? 0, required: shift.requiredHeadcount }));
+    const pastDrafts = shifts
+      .filter((shift) => shift.status === 'draft' && shift.startsAt <= now)
+      .map((shift) => ({ id: shift.id, name: shift.name, startsAt: shift.startsAt, endsAt: shift.endsAt }));
     const conflicts = shifts.length ? await this.assignmentRepository.createQueryBuilder('a').innerJoin(ShiftAssignment, 'b', 'b.employee_id = a.employee_id AND b.id > a.id').innerJoin(Shift, 'sa', 'sa.id = a.shift_id').innerJoin(Shift, 'sb', 'sb.id = b.shift_id').innerJoin(Employee, 'employee', 'employee.id = a.employee_id').select(['a.employee_id AS "employeeId"', "CONCAT(employee.last_name, ' ', employee.first_name) AS \"employeeName\"", 'sa.id AS "firstShiftId"', 'sb.id AS "secondShiftId"']).where('a.shift_id IN (:...shiftIds) AND b.shift_id IN (:...shiftIds)', { shiftIds: shifts.map((shift) => shift.id) }).andWhere("a.assignment_status <> 'cancelled' AND b.assignment_status <> 'cancelled'").andWhere('sa.starts_at < sb.ends_at AND sa.ends_at > sb.starts_at').getRawMany() : [];
-    return { valid: conflicts.length === 0 && understaffed.length === 0, shiftCount: shifts.length, conflicts, understaffed };
+    return { valid: conflicts.length === 0 && understaffed.length === 0 && pastDrafts.length === 0, shiftCount: shifts.length, conflicts, understaffed, pastDrafts };
   }
 
   async publishSchedule(dto: PublishScheduleDto, actor: AuthUser) {
     const validation = await this.validateSchedule(dto, actor);
     if (validation.conflicts.length) throw new BadRequestException('Không thể công bố vì còn nhân viên bị trùng ca');
+    if (validation.pastDrafts.length) throw new BadRequestException('Không thể công bố: có ca nháp đã đến hoặc qua giờ bắt đầu. Vui lòng sửa lại thời gian ca');
     if (validation.understaffed.length && !dto.allowUnderstaffed) throw new BadRequestException('Lịch còn thiếu nhân sự; cần xác nhận công bố thiếu người');
     const shifts = await this.scopedShiftsInRange(dto.from, dto.to, dto.branchId, actor);
     const draft = shifts.filter((shift) => shift.status === 'draft');
@@ -1023,23 +1028,23 @@ export class SchedulesService {
     if (shift.status === 'cancelled') {
       throw new BadRequestException(`Không thể ${action} ca đã hủy`);
     }
-    if (shift.status === 'completed' || shift.endsAt <= now) {
+    if (shift.status === 'completed') {
       throw new BadRequestException(`Không thể ${action} ca đã kết thúc`);
     }
-    if (shift.startsAt <= now) {
+    if (shift.status === 'published' && shift.startsAt <= now) {
       throw new BadRequestException(`Không thể ${action} khi ca đã bắt đầu`);
     }
   }
 
   private toResponse(shift: Shift, assignmentCount: number) {
     const now = new Date();
-    const canModify = !['completed', 'cancelled'].includes(shift.status) && shift.startsAt > now;
+    const canModify = shift.status === 'draft' || (shift.status === 'published' && shift.startsAt > now);
     const lockReason = shift.status === 'cancelled'
       ? 'Ca đã hủy'
-      : shift.status === 'completed' || shift.endsAt <= now
+      : shift.status === 'completed'
         ? 'Ca đã kết thúc'
-        : shift.startsAt <= now
-          ? 'Ca đã bắt đầu'
+        : shift.status === 'published' && shift.startsAt <= now
+          ? 'Ca đã công bố và đã bắt đầu'
           : null;
     return {
       id: shift.id,

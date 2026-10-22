@@ -6,7 +6,7 @@ import { User } from '../../access-control/entities/user.entity';
 @Check("shift_swap_requests_check", "((target_employee_id IS NULL) OR (target_employee_id <> requester_id))")
 @Check("shift_swap_requests_check1", "(((request_type)::text <> 'swap'::text) OR (requested_assignment_id IS NOT NULL))")
 @Check("shift_swap_requests_request_type_check", "((request_type)::text = ANY ((ARRAY['swap'::character varying, 'give_away'::character varying])::text[]))")
-@Check("shift_swap_requests_status_check", "((status)::text = ANY ((ARRAY['pending_receiver'::character varying, 'pending_manager'::character varying, 'approved'::character varying, 'rejected'::character varying, 'cancelled'::character varying, 'expired'::character varying])::text[]))")
+@Check("shift_swap_requests_status_check", "((status)::text = ANY ((ARRAY['pending_receiver'::character varying, 'pending_manager'::character varying, 'approved'::character varying, 'rejected_by_receiver'::character varying, 'rejected_by_manager'::character varying, 'cancelled'::character varying, 'expired'::character varying, 'invalidated'::character varying])::text[]))")
 @Entity({ name: 'shift_swap_requests', schema: 'workforce' })
 export class ShiftSwapRequest {
   @PrimaryGeneratedColumn('uuid', { name: 'id' })
@@ -35,6 +35,12 @@ export class ShiftSwapRequest {
 
   @Column('timestamptz', { name: 'receiver_responded_at', nullable: true })
   receiverRespondedAt!: Date | null;
+
+  @Column('text', { name: 'receiver_note', nullable: true })
+  receiverNote!: string | null;
+
+  @Column('timestamptz', { name: 'expires_at', nullable: true })
+  expiresAt!: Date | null;
 
   @Column('uuid', { name: 'reviewed_by', nullable: true })
   reviewedBy!: string | null;

@@ -1,65 +1,36 @@
-import { Check, Column, Entity, JoinColumn, ManyToOne, PrimaryColumn, PrimaryGeneratedColumn, Unique } from 'typeorm';
+import { Check, Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn, Unique, VersionColumn } from 'typeorm';
 import { Organization } from '../../core/entities/organization.entity';
 import { User } from '../../access-control/entities/user.entity';
 
-@Check("payroll_periods_check", "(ends_on >= starts_on)")
-@Check("payroll_periods_check1", "((payment_date IS NULL) OR (payment_date >= ends_on))")
-@Check("payroll_periods_check2", "(((status)::text <> 'locked'::text) OR (locked_at IS NOT NULL))")
-@Check("payroll_periods_status_check", "((status)::text = ANY ((ARRAY['draft'::character varying, 'calculating'::character varying, 'pending_approval'::character varying, 'approved'::character varying, 'locked'::character varying, 'paid'::character varying])::text[]))")
-@Unique("payroll_periods_organization_id_code_key", ["organizationId","code"])
+@Check('payroll_period_dates_check', '(ends_on >= starts_on)')
+@Check('payroll_period_payment_date_check', '((payment_date IS NULL) OR (payment_date >= ends_on))')
+@Check('payroll_period_status_check', "status IN ('draft','calculating','needs_review','pending_approval','approved','returned','locked','partially_paid','paid','cancelled')")
+@Unique('payroll_periods_organization_id_code_key', ['organizationId', 'code'])
 @Entity({ name: 'payroll_periods', schema: 'workforce' })
 export class PayrollPeriod {
-  @PrimaryGeneratedColumn('uuid', { name: 'id' })
-  id!: string;
+  @PrimaryGeneratedColumn('uuid') id!: string;
+  @Column('uuid', { name: 'organization_id' }) organizationId!: string;
+  @Column('varchar', { length: 30 }) code!: string;
+  @Column('varchar', { length: 100 }) name!: string;
+  @Column('date', { name: 'starts_on' }) startsOn!: string;
+  @Column('date', { name: 'ends_on' }) endsOn!: string;
+  @Column('date', { name: 'payment_date', nullable: true }) paymentDate!: string | null;
+  @Column('varchar', { length: 24, default: 'draft' }) status!: string;
+  @Column('text', { name: 'return_reason', nullable: true }) returnReason!: string | null;
+  @Column('integer', { name: 'calculation_version', default: 0 }) calculationVersion!: number;
+  @Column('varchar', { name: 'calculator_version', length: 30, default: 'payroll-v1' }) calculatorVersion!: string;
+  @Column('uuid', { name: 'created_by', nullable: true }) createdBy!: string | null;
+  @Column('uuid', { name: 'approved_by', nullable: true }) approvedBy!: string | null;
+  @Column('timestamptz', { name: 'approved_at', nullable: true }) approvedAt!: Date | null;
+  @Column('uuid', { name: 'locked_by', nullable: true }) lockedBy!: string | null;
+  @Column('timestamptz', { name: 'locked_at', nullable: true }) lockedAt!: Date | null;
+  @Column('timestamptz', { name: 'published_at', nullable: true }) publishedAt!: Date | null;
+  @VersionColumn({ name: 'version' }) version!: number;
+  @Column('timestamptz', { name: 'created_at', default: () => 'CURRENT_TIMESTAMP' }) createdAt!: Date;
+  @Column('timestamptz', { name: 'updated_at', default: () => 'CURRENT_TIMESTAMP' }) updatedAt!: Date;
 
-  @Column('uuid', { name: 'organization_id' })
-  organizationId!: string;
-
-  @Column('varchar', { name: 'code', length: 30 })
-  code!: string;
-
-  @Column('varchar', { name: 'name', length: 100 })
-  name!: string;
-
-  @Column('date', { name: 'starts_on' })
-  startsOn!: string;
-
-  @Column('date', { name: 'ends_on' })
-  endsOn!: string;
-
-  @Column('date', { name: 'payment_date', nullable: true })
-  paymentDate!: string | null;
-
-  @Column('varchar', { name: 'status', length: 20, default: () => "'draft'::character varying" })
-  status!: string;
-
-  @Column('uuid', { name: 'approved_by', nullable: true })
-  approvedBy!: string | null;
-
-  @Column('timestamptz', { name: 'approved_at', nullable: true })
-  approvedAt!: Date | null;
-
-  @Column('uuid', { name: 'locked_by', nullable: true })
-  lockedBy!: string | null;
-
-  @Column('timestamptz', { name: 'locked_at', nullable: true })
-  lockedAt!: Date | null;
-
-  @Column('timestamptz', { name: 'created_at', default: () => "CURRENT_TIMESTAMP" })
-  createdAt!: Date;
-
-  @Column('timestamptz', { name: 'updated_at', default: () => "CURRENT_TIMESTAMP" })
-  updatedAt!: Date;
-
-  @ManyToOne(() => Organization, {  })
-  @JoinColumn({ name: 'organization_id', referencedColumnName: 'id', foreignKeyConstraintName: 'payroll_periods_organization_id_fkey' })
-  organization!: Organization;
-
-  @ManyToOne(() => User, { nullable: true })
-  @JoinColumn({ name: 'approved_by', referencedColumnName: 'id', foreignKeyConstraintName: 'payroll_periods_approved_by_fkey' })
-  approvedByUser!: User | null;
-
-  @ManyToOne(() => User, { nullable: true })
-  @JoinColumn({ name: 'locked_by', referencedColumnName: 'id', foreignKeyConstraintName: 'payroll_periods_locked_by_fkey' })
-  lockedByUser!: User | null;
+  @ManyToOne(() => Organization) @JoinColumn({ name: 'organization_id' }) organization!: Organization;
+  @ManyToOne(() => User, { nullable: true }) @JoinColumn({ name: 'created_by' }) createdByUser!: User | null;
+  @ManyToOne(() => User, { nullable: true }) @JoinColumn({ name: 'approved_by' }) approvedByUser!: User | null;
+  @ManyToOne(() => User, { nullable: true }) @JoinColumn({ name: 'locked_by' }) lockedByUser!: User | null;
 }

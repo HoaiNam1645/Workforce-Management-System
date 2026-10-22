@@ -271,7 +271,7 @@ function WorkHistoryTab({ employeeId }: Readonly<{ employeeId: string }>) {
   if (!query.data?.length) return <EmptyState icon={History} title="Chưa có lịch sử" description="Các thay đổi vị trí và đơn vị công tác sẽ xuất hiện tại đây." />;
 
   return (
-    <Section title="Dòng thời gian công tác" description="Ghi nhận tự động khi thay đổi vị trí, phòng ban, chi nhánh hoặc loại nhân viên.">
+    <Section title="Dòng thời gian công tác" description="Lịch sử vị trí, phòng ban, chi nhánh và loại nhân viên.">
       <div className="relative ml-2 border-l border-line pl-6">
         {query.data.map((item, index) => (
           <article key={item.id} className={cn('relative pb-7', index === query.data.length - 1 && 'pb-0')}>

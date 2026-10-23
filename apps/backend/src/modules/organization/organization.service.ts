@@ -162,7 +162,7 @@ export class OrganizationService {
       throw new BadRequestException("Địa chỉ tìm kiếm phải có ít nhất 3 ký tự");
     }
     const simplifiedQuery = query
-      .replace(/\b(?:suite|ste|unit|room)\s*#?[A-Za-z0-9-]+\b/gi, "")
+      .replace(/\b(?:suite|ste|unit|room)\s+#?[A-Za-z0-9-]+\b/gi, "")
       .replace(
         /\b(Street|St|Road|Rd|Avenue|Ave|Boulevard|Blvd|Drive|Dr|Lane|Ln)\s+[A-Za-z]+\d+\b/gi,
         "$1",

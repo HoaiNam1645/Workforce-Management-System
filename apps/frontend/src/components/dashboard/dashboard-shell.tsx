@@ -11,6 +11,7 @@ import {
   CircleGauge,
   ClipboardCheck,
   CircleDollarSign,
+  CircleHelp,
   Clock3,
   Fingerprint,
   LayoutDashboard,
@@ -42,6 +43,10 @@ import {
   getNotifications,
   markNotificationRead,
 } from "@/lib/notifications-api";
+import {
+  ProductTour,
+  START_TOUR_EVENT,
+} from "@/components/guidance/product-tour";
 
 type NavigationItem = {
   label: string;
@@ -304,6 +309,7 @@ export function DashboardShell({
       )}
 
       <aside
+        data-tour="sidebar"
         className={cn(
           "fixed inset-y-0 left-0 z-50 flex flex-col border-r border-white/8 bg-sidebar text-white transition-[width,transform] duration-300",
           isCollapsed ? "w-[76px]" : "w-[252px]",
@@ -336,6 +342,7 @@ export function DashboardShell({
 
         <div className="px-3 pt-4">
           <Link
+            data-tour="workspace-switcher"
             href={
               isSuperAdmin
                 ? "/admin"
@@ -415,6 +422,7 @@ export function DashboardShell({
                       <Link
                         key={item.label}
                         href={item.href}
+                        data-tour-nav={item.href}
                         title={isCollapsed ? item.label : undefined}
                         className={className}
                       >
@@ -490,7 +498,10 @@ export function DashboardShell({
           isCollapsed ? "lg:pl-[76px]" : "lg:pl-[252px]",
         )}
       >
-        <header className="sticky top-0 z-30 flex h-[72px] items-center border-b border-line/80 bg-canvas/88 px-4 backdrop-blur-xl sm:px-6 lg:px-8">
+        <header
+          data-tour="header"
+          className="sticky top-0 z-30 flex h-[72px] items-center border-b border-line/80 bg-canvas/88 px-4 backdrop-blur-xl sm:px-6 lg:px-8"
+        >
           <button
             className="mr-3 grid size-10 place-items-center rounded-md border border-line bg-surface text-ink lg:hidden"
             onClick={() => setIsMobileOpen(true)}
@@ -506,7 +517,10 @@ export function DashboardShell({
           </div>
 
           <div className="ml-auto flex items-center gap-2 sm:gap-3">
-            <button className="hidden h-10 w-[260px] items-center gap-2 rounded-md border border-line bg-surface px-3 text-sm text-muted shadow-[0_1px_0_rgba(35,80,130,0.04)] transition hover:border-brand/30 lg:flex">
+            <button
+              data-tour="global-search"
+              className="hidden h-10 w-[260px] items-center gap-2 rounded-md border border-line bg-surface px-3 text-sm text-muted shadow-[0_1px_0_rgba(35,80,130,0.04)] transition hover:border-brand/30 lg:flex"
+            >
               <Search className="size-4" />
               <span>Tìm nhân viên, ca làm...</span>
               <kbd className="ml-auto rounded border border-line bg-canvas px-1.5 py-0.5 font-mono text-[10px]">
@@ -514,6 +528,16 @@ export function DashboardShell({
               </kbd>
             </button>
             <button
+              data-tour="help"
+              aria-label="Hướng dẫn màn hình"
+              onClick={() => window.dispatchEvent(new Event(START_TOUR_EVENT))}
+              className="flex h-10 items-center gap-2 rounded-md border border-line bg-surface px-2.5 text-sm font-bold text-muted transition hover:border-brand/35 hover:text-brand sm:px-3"
+            >
+              <CircleHelp className="size-[18px]" />
+              <span className="hidden xl:inline">Hướng dẫn</span>
+            </button>
+            <button
+              data-tour="notifications"
               onClick={() => setNotificationsOpen((value) => !value)}
               className="relative grid size-10 place-items-center rounded-md border border-line bg-surface text-muted transition hover:text-ink"
             >
@@ -570,10 +594,14 @@ export function DashboardShell({
           </div>
         </header>
 
-        <main className="min-h-[calc(100vh-72px)] min-w-0 max-w-full overflow-x-hidden p-4 sm:p-6 lg:p-8">
+        <main
+          data-tour="page-content"
+          className="min-h-[calc(100vh-72px)] min-w-0 max-w-full overflow-x-hidden p-4 sm:p-6 lg:p-8"
+        >
           {children}
         </main>
       </div>
+      <ProductTour />
     </div>
   );
 }

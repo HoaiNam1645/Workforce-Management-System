@@ -15,6 +15,7 @@ type EmployeeLocationMapProps = {
 };
 
 const MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
+maplibregl.setWorkerUrl('/maplibre-gl-worker.mjs');
 
 export default function EmployeeLocationMap(props: EmployeeLocationMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);

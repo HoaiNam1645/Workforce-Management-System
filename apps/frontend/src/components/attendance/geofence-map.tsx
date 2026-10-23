@@ -13,6 +13,7 @@ type GeofenceMapProps = {
 
 const DEFAULT_POSITION: [number, number] = [108.20623, 16.047079];
 const MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
+maplibregl.setWorkerUrl('/maplibre-gl-worker.mjs');
 
 export default function GeofenceMap({ latitude, longitude, radiusM, onPositionChange }: GeofenceMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);

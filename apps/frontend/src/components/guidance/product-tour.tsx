@@ -53,6 +53,7 @@ function storageKey(userId: string, definition: ProductTourDefinition) {
 function addSkipButton(
   popover: { footer: HTMLElement; footerButtons: HTMLElement },
   instance: Driver,
+  onSkip: () => void,
 ) {
   if (popover.footer.querySelector("[data-tour-skip]")) return;
   const button = document.createElement("button");
@@ -60,7 +61,10 @@ function addSkipButton(
   button.dataset.tourSkip = "true";
   button.className = "workforce-tour-skip";
   button.textContent = "Bỏ qua";
-  button.addEventListener("click", () => instance.destroy());
+  button.addEventListener("click", () => {
+    onSkip();
+    instance.destroy();
+  });
   popover.footer.insertBefore(button, popover.footerButtons);
 }
 
@@ -79,6 +83,8 @@ export function ProductTour() {
         return;
       }
       activeDriver.current?.destroy();
+      const markCompleted = () =>
+        window.localStorage.setItem(storageKey(user.id, definition), "done");
       let instance: Driver;
       const steps: DriveStep[] = definition.steps.map((step) => ({
         element: step.target ? () => resolveTarget(step.target) as Element : undefined,
@@ -116,11 +122,11 @@ export function ProductTour() {
         doneBtnText: "Hoàn tất",
         closeBtnLabel: "Đóng hướng dẫn",
         onPopoverRender: (popover, options) =>
-          addSkipButton(popover, options.driver),
+          addSkipButton(popover, options.driver, markCompleted),
         onDestroyed: (_element, _step, options) => {
           activeDriver.current = null;
           if (options.reason !== "api" && options.reason !== "replaced") {
-            window.localStorage.setItem(storageKey(user.id, definition), "done");
+            markCompleted();
           }
         },
       });

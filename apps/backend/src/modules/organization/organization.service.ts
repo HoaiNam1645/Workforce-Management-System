@@ -45,7 +45,7 @@ import { Branch } from "./entities/branch.entity";
 import { DepartmentPosition } from "./entities/department-position.entity";
 import { Department } from "./entities/department.entity";
 import { Position } from "./entities/position.entity";
-import tzLookup from "tz-lookup";
+import tzLookup = require("tz-lookup");
 
 type Scope = {
   unrestricted: boolean;

@@ -188,7 +188,7 @@ export class OrganizationService {
           };
           const feature = result.features?.[0];
           if (!feature) continue;
-          if (candidate === query && feature.place_type?.includes("place") && candidates.length > 1) continue;
+          if (candidate === query && candidates.length > 1 && !feature.place_type?.includes("address")) continue;
           return {
             latitude: feature.center[1],
             longitude: feature.center[0],

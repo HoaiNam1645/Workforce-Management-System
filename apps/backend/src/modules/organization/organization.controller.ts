@@ -23,6 +23,7 @@ import {
   SaveBranchDto,
   SaveDepartmentDto,
   SaveOperatingHoursDto,
+  SaveOrganizationDto,
   SavePositionDto,
   SetBranchDepartmentsDto,
   RevokeBranchScopeDto,
@@ -32,6 +33,30 @@ import { OrganizationService } from "./organization.service";
 @Controller("organization")
 export class OrganizationController {
   constructor(private readonly service: OrganizationService) {}
+
+  @Get("profile")
+  @RequirePermissions("organization.view")
+  profile() {
+    return this.service.getProfile();
+  }
+
+  @Post("profile")
+  @RequirePermissions("branches.manage")
+  createProfile(
+    @Body() dto: SaveOrganizationDto,
+    @CurrentUser() actor: AuthUser,
+  ) {
+    return this.service.createProfile(dto, actor);
+  }
+
+  @Patch("profile")
+  @RequirePermissions("branches.manage")
+  updateProfile(
+    @Body() dto: SaveOrganizationDto,
+    @CurrentUser() actor: AuthUser,
+  ) {
+    return this.service.updateProfile(dto, actor);
+  }
 
   @Get("dashboard")
   @RequirePermissions("organization.view")

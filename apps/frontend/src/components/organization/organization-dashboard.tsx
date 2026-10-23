@@ -37,11 +37,13 @@ import {
   getDepartments,
   geocodeAddress,
   getPositions,
+  getOrganizationProfile,
   grantBranchScope,
   revokeBranchScope,
   saveBranch,
   saveDepartment,
   saveOperatingHours,
+  saveOrganizationProfile,
   savePosition,
   setBranchDepartments,
   type Branch,
@@ -51,6 +53,8 @@ import {
   type OperatingException,
   type OperatingHour,
   type Position,
+  type OrganizationProfile,
+  type OrganizationProfilePayload,
 } from "@/lib/organization-api";
 import { cn } from "@/lib/utils";
 import { generateBusinessCode } from "@/lib/business-code";
@@ -68,7 +72,253 @@ const GeofenceMap = dynamic(
 );
 type View = "branches" | "departments" | "positions";
 
+function OrganizationProfileForm({
+  organization,
+  close,
+}: {
+  organization?: OrganizationProfile;
+  close?: () => void;
+}) {
+  const qc = useQueryClient();
+  const [form, setForm] = useState<OrganizationProfilePayload>({
+    name: organization?.name ?? "",
+    legalName: organization?.legalName ?? "",
+    taxCode: organization?.taxCode ?? "",
+    email: organization?.email ?? "",
+    phone: organization?.phone ?? "",
+    address: organization?.address ?? "",
+    timezone: organization?.timezone ?? "Asia/Ho_Chi_Minh",
+    currencyCode: organization?.currencyCode ?? "VND",
+    weekStartsOn: organization?.weekStartsOn ?? 1,
+  });
+  const mutation = useMutation({
+    mutationFn: () => saveOrganizationProfile(form, Boolean(organization)),
+    meta: {
+      successMessage: organization
+        ? "Đã cập nhật thông tin doanh nghiệp"
+        : "Đã thiết lập doanh nghiệp",
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["organization-profile"] });
+      await qc.invalidateQueries({ queryKey: ["organization-dashboard"] });
+      close?.();
+    },
+  });
+  const valid =
+    form.name.trim().length >= 2 &&
+    (!form.email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email));
+
+  return (
+    <div className="mx-auto w-full max-w-5xl">
+      <header className="border-b border-line bg-surface px-5 py-6 sm:px-8">
+        <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-brand">
+          {organization ? "Thông tin doanh nghiệp" : "Bắt đầu sử dụng"}
+        </p>
+        <h1 className="mt-2 text-2xl font-black tracking-[-0.04em] sm:text-[30px]">
+          {organization ? "Cập nhật doanh nghiệp" : "Thiết lập doanh nghiệp"}
+        </h1>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
+          {organization
+            ? "Thông tin chung được dùng trên lịch, bảng công, phiếu lương và báo cáo."
+            : "Hoàn tất thông tin chung trước khi tạo chi nhánh, phòng ban và nhân viên."}
+        </p>
+      </header>
+
+      <div className="grid border-x border-b border-line bg-surface lg:grid-cols-[1fr_300px]">
+        <div className="space-y-6 p-5 sm:p-8">
+          <section>
+            <h2 className="text-sm font-black">Thông tin nhận diện</h2>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <Input
+                label="Tên doanh nghiệp *"
+                value={form.name}
+                change={(name) => setForm({ ...form, name })}
+              />
+              <Input
+                label="Tên pháp lý"
+                value={form.legalName ?? ""}
+                change={(legalName) => setForm({ ...form, legalName })}
+              />
+              <Input
+                label="Mã số thuế"
+                value={form.taxCode ?? ""}
+                change={(taxCode) => setForm({ ...form, taxCode })}
+              />
+              <Input
+                label="Email"
+                type="email"
+                value={form.email ?? ""}
+                change={(email) => setForm({ ...form, email })}
+              />
+              <Input
+                label="Số điện thoại"
+                value={form.phone ?? ""}
+                change={(phone) => setForm({ ...form, phone })}
+              />
+              <div className="sm:col-span-2">
+                <Input
+                  label="Địa chỉ"
+                  value={form.address ?? ""}
+                  change={(address) => setForm({ ...form, address })}
+                />
+              </div>
+            </div>
+          </section>
+          <section className="border-t border-line pt-6">
+            <h2 className="text-sm font-black">Thiết lập vận hành</h2>
+            <div className="mt-4 grid gap-4 sm:grid-cols-3">
+              <Select
+                label="Múi giờ"
+                value={form.timezone}
+                change={(timezone) => setForm({ ...form, timezone })}
+                options={timezones}
+              />
+              <Select
+                label="Tiền tệ"
+                value={form.currencyCode}
+                change={(currencyCode) => setForm({ ...form, currencyCode })}
+                options={[
+                  ["VND", "VND - Việt Nam"],
+                  ["USD", "USD - Đô la Mỹ"],
+                  ["SGD", "SGD - Singapore"],
+                ]}
+              />
+              <Select
+                label="Tuần bắt đầu"
+                value={String(form.weekStartsOn)}
+                change={(value) =>
+                  setForm({ ...form, weekStartsOn: Number(value) })
+                }
+                options={[
+                  ["1", "Thứ hai"],
+                  ["0", "Chủ nhật"],
+                ]}
+              />
+            </div>
+          </section>
+          {mutation.isError && <FormError message={mutation.error.message} />}
+          <div className="flex flex-col-reverse gap-2 border-t border-line pt-5 sm:flex-row sm:justify-end">
+            {close && (
+              <Button variant="outline" onClick={close}>
+                Hủy
+              </Button>
+            )}
+            <Button
+              variant="brand"
+              loading={mutation.isPending}
+              loadingText="Đang lưu"
+              disabled={!valid}
+              onClick={() => mutation.mutate()}
+            >
+              {organization ? "Lưu thay đổi" : "Hoàn tất thiết lập"}
+            </Button>
+          </div>
+        </div>
+        <aside className="border-t border-line bg-canvas/50 p-5 lg:border-l lg:border-t-0 lg:p-6">
+          <Building2 className="size-7 text-brand" />
+          <h2 className="mt-4 font-black">Bước đầu tiên</h2>
+          <p className="mt-2 text-sm leading-6 text-muted">
+            Hệ thống tự tạo mã doanh nghiệp. Bạn không cần nhập mã kỹ thuật hoặc
+            cấu hình chấm công nâng cao tại bước này.
+          </p>
+          <div className="mt-5 space-y-3 text-sm">
+            {[
+              "Thiết lập doanh nghiệp",
+              "Tạo chi nhánh và địa điểm",
+              "Tạo phòng ban, vị trí",
+              "Thêm nhân viên",
+            ].map((label, index) => (
+              <div key={label} className="flex items-center gap-3">
+                <span
+                  className={cn(
+                    "grid size-6 shrink-0 place-items-center border text-xs font-black",
+                    index === 0
+                      ? "border-brand bg-brand text-white"
+                      : "border-line bg-surface text-muted",
+                  )}
+                >
+                  {index + 1}
+                </span>
+                <span
+                  className={index === 0 ? "font-bold text-ink" : "text-muted"}
+                >
+                  {label}
+                </span>
+              </div>
+            ))}
+          </div>
+        </aside>
+      </div>
+    </div>
+  );
+}
+
 export function OrganizationDashboard() {
+  const { hasPermission } = useAuth();
+  const profile = useQuery({
+    queryKey: ["organization-profile"],
+    queryFn: getOrganizationProfile,
+    retry: false,
+  });
+  const [editing, setEditing] = useState(false);
+
+  if (profile.isPending) {
+    return (
+      <div className="grid min-h-[420px] place-items-center border border-line bg-surface">
+        <div className="text-center">
+          <LoaderCircle className="mx-auto size-6 animate-spin text-brand" />
+          <p className="mt-3 text-sm font-bold text-muted">
+            Đang kiểm tra thiết lập doanh nghiệp...
+          </p>
+        </div>
+      </div>
+    );
+  }
+  if (profile.isError) {
+    return (
+      <div className="mx-auto max-w-2xl border border-danger/20 bg-danger-soft p-6">
+        <h1 className="text-lg font-black">
+          Không thể tải thiết lập doanh nghiệp
+        </h1>
+        <p className="mt-2 text-sm text-danger">{profile.error.message}</p>
+        <Button
+          className="mt-5"
+          variant="outline"
+          onClick={() => profile.refetch()}
+        >
+          Thử lại
+        </Button>
+      </div>
+    );
+  }
+  if (!profile.data.configured || !profile.data.organization) {
+    return <OrganizationProfileForm />;
+  }
+  if (editing) {
+    return (
+      <OrganizationProfileForm
+        organization={profile.data.organization}
+        close={() => setEditing(false)}
+      />
+    );
+  }
+  return (
+    <OrganizationManagement
+      organization={profile.data.organization}
+      editProfile={
+        hasPermission("branches.manage") ? () => setEditing(true) : undefined
+      }
+    />
+  );
+}
+
+function OrganizationManagement({
+  organization,
+  editProfile,
+}: {
+  organization: OrganizationProfile;
+  editProfile?: () => void;
+}) {
   const params = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -108,19 +358,38 @@ export function OrganizationDashboard() {
             bảng công, payroll và phạm vi quản lý.
           </p>
         </div>
-        {((view === "branches" && hasPermission("branches.manage")) ||
-          (view === "departments" && hasPermission("departments.manage")) ||
-          (view === "positions" && hasPermission("positions.manage"))) && (
-          <Button variant="brand" onClick={() => setForm("new")}>
-            <Plus className="size-4" />
-            {view === "branches"
-              ? "Thêm chi nhánh"
-              : view === "departments"
-                ? "Thêm phòng ban"
-                : "Thêm vị trí"}
-          </Button>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {editProfile && (
+            <Button variant="outline" onClick={editProfile}>
+              <Settings2 className="size-4" />
+              Thông tin doanh nghiệp
+            </Button>
+          )}
+          {((view === "branches" && hasPermission("branches.manage")) ||
+            (view === "departments" && hasPermission("departments.manage")) ||
+            (view === "positions" && hasPermission("positions.manage"))) && (
+            <Button variant="brand" onClick={() => setForm("new")}>
+              <Plus className="size-4" />
+              {view === "branches"
+                ? "Thêm chi nhánh"
+                : view === "departments"
+                  ? "Thêm phòng ban"
+                  : "Thêm vị trí"}
+            </Button>
+          )}
+        </div>
       </header>
+      <div className="flex flex-col gap-2 border border-line bg-surface px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-black">{organization.name}</p>
+          <p className="mt-0.5 text-xs text-muted">
+            {organization.address || "Chưa cập nhật địa chỉ doanh nghiệp"}
+          </p>
+        </div>
+        <Badge>
+          {organization.currencyCode} · {organization.timezone}
+        </Badge>
+      </div>
       <nav className="flex overflow-x-auto border-b border-line bg-surface px-2">
         {(
           [
@@ -730,8 +999,11 @@ function BranchForm({
       // A full address may already contain its country (for example a US address),
       // so do not silently append the form's default country before trying it.
       const rawAddress = form.addressLine.trim();
-      const result = await geocodeAddress(rawAddress)
-        ?? (addressQuery !== rawAddress ? await geocodeAddress(addressQuery) : null);
+      const result =
+        (await geocodeAddress(rawAddress)) ??
+        (addressQuery !== rawAddress
+          ? await geocodeAddress(addressQuery)
+          : null);
       if (!result) {
         setMapError(
           "Không tìm thấy địa chỉ. Hãy bổ sung quận, tỉnh hoặc kéo ghim đến vị trí đúng.",

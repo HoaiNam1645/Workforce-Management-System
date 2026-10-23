@@ -7,6 +7,52 @@ export type OrganizationFilters = {
   branchId?: string;
   parentId?: string;
 };
+
+export type OrganizationProfile = {
+  id: string;
+  code: string;
+  name: string;
+  legalName: string | null;
+  taxCode: string | null;
+  email: string | null;
+  phone: string | null;
+  address: string | null;
+  timezone: string;
+  currencyCode: string;
+  weekStartsOn: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type OrganizationProfilePayload = Pick<
+  OrganizationProfile,
+  | "name"
+  | "legalName"
+  | "taxCode"
+  | "email"
+  | "phone"
+  | "address"
+  | "timezone"
+  | "currencyCode"
+  | "weekStartsOn"
+>;
+
+export function getOrganizationProfile() {
+  return apiRequest<{
+    configured: boolean;
+    organization: OrganizationProfile | null;
+  }>("/organization/profile");
+}
+
+export function saveOrganizationProfile(
+  payload: OrganizationProfilePayload,
+  configured: boolean,
+) {
+  return apiRequest<OrganizationProfile>("/organization/profile", {
+    method: configured ? "PATCH" : "POST",
+    body: JSON.stringify(payload),
+  });
+}
 const query = (filters: OrganizationFilters) => {
   const params = new URLSearchParams();
   Object.entries(filters).forEach(([key, value]) => {

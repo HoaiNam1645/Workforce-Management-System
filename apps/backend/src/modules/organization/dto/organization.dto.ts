@@ -29,6 +29,18 @@ export class OrganizationQueryDto {
   @IsOptional() @IsUUID() parentId?: string;
 }
 
+export class SaveOrganizationDto {
+  @IsString() @MinLength(2) @MaxLength(200) name!: string;
+  @IsOptional() @IsString() @MaxLength(255) legalName?: string | null;
+  @IsOptional() @IsString() @MaxLength(50) taxCode?: string | null;
+  @IsOptional() @IsEmail() email?: string | null;
+  @IsOptional() @IsString() @MaxLength(30) phone?: string | null;
+  @IsOptional() @IsString() @MaxLength(1000) address?: string | null;
+  @IsString() @MaxLength(64) timezone!: string;
+  @Matches(/^[A-Z]{3}$/) currencyCode!: string;
+  @Type(() => Number) @IsInt() @Min(0) @Max(6) weekStartsOn!: number;
+}
+
 export class SaveBranchDto {
   @IsString() @MinLength(2) @MaxLength(30) code!: string;
   @IsString() @MinLength(2) @MaxLength(150) name!: string;
@@ -70,11 +82,9 @@ export class OperatingHourDto {
   @Type(() => Number) @IsInt() @Min(0) @Max(6) dayOfWeek!: number;
   @IsBoolean() isClosed!: boolean;
   @IsOptional() @Matches(/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/) opensAt?:
-    | string
-    | null;
+    string | null;
   @IsOptional() @Matches(/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/) closesAt?:
-    | string
-    | null;
+    string | null;
   @IsOptional() @IsBoolean() spansNextDay?: boolean;
 }
 
@@ -83,11 +93,9 @@ export class OperatingExceptionDto {
   @IsDateString() exceptionDate!: string;
   @IsBoolean() isClosed!: boolean;
   @IsOptional() @Matches(/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/) opensAt?:
-    | string
-    | null;
+    string | null;
   @IsOptional() @Matches(/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/) closesAt?:
-    | string
-    | null;
+    string | null;
   @IsOptional() @IsBoolean() spansNextDay?: boolean;
   @IsString() @MinLength(2) @MaxLength(150) name!: string;
   @IsOptional() @IsString() @MaxLength(1000) note?: string | null;

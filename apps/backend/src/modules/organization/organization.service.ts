@@ -32,6 +32,7 @@ import {
   SaveBranchDto,
   SaveDepartmentDto,
   SaveOperatingHoursDto,
+  SaveOrganizationDto,
   SavePositionDto,
   SetBranchDepartmentsDto,
   RevokeBranchScopeDto,
@@ -78,6 +79,106 @@ export class OrganizationService {
     private readonly shiftRepository: Repository<Shift>,
     private readonly dataSource: DataSource,
   ) {}
+
+  async getProfile() {
+    const organization = await this.organizationRepository
+      .createQueryBuilder("organization")
+      .orderBy("organization.created_at", "ASC")
+      .getOne();
+    return {
+      configured: Boolean(organization),
+      organization: organization ? this.organizationView(organization) : null,
+    };
+  }
+
+  async createProfile(dto: SaveOrganizationDto, actor: AuthUser) {
+    return this.dataSource.transaction(async (manager) => {
+      await manager.query("SELECT pg_advisory_xact_lock(92731001)");
+      const existing = await manager.getRepository(Organization).findOne({
+        order: { createdAt: "ASC" },
+      });
+      if (existing) {
+        throw new ConflictException("Doanh nghiệp đã được thiết lập");
+      }
+      const organization = manager.create(Organization, {
+        code: `ORG-${Date.now().toString(36).toUpperCase()}`,
+        ...this.organizationPayload(dto),
+        attendanceRoundingMinutes: 1,
+        lateGraceMinutes: 15,
+        earlyLeaveGraceMinutes: 0,
+      });
+      await manager.save(organization);
+      await this.audit(
+        manager,
+        actor.id,
+        "organization.created",
+        "organization",
+        organization.id,
+        null,
+        this.organizationView(organization),
+      );
+      return this.organizationView(organization);
+    });
+  }
+
+  async updateProfile(dto: SaveOrganizationDto, actor: AuthUser) {
+    return this.dataSource.transaction(async (manager) => {
+      const repository = manager.getRepository(Organization);
+      const organization = await repository.findOne({
+        order: { createdAt: "ASC" },
+      });
+      if (!organization) {
+        throw new BadRequestException("Hãy thiết lập doanh nghiệp trước");
+      }
+      const before = this.organizationView(organization);
+      Object.assign(organization, this.organizationPayload(dto), {
+        updatedAt: new Date(),
+      });
+      await repository.save(organization);
+      await this.audit(
+        manager,
+        actor.id,
+        "organization.updated",
+        "organization",
+        organization.id,
+        before,
+        this.organizationView(organization),
+      );
+      return this.organizationView(organization);
+    });
+  }
+
+  private organizationPayload(dto: SaveOrganizationDto) {
+    return {
+      name: dto.name.trim(),
+      legalName: dto.legalName?.trim() || null,
+      taxCode: dto.taxCode?.trim() || null,
+      email: dto.email?.trim().toLowerCase() || null,
+      phone: dto.phone?.trim() || null,
+      address: dto.address?.trim() || null,
+      timezone: dto.timezone,
+      currencyCode: dto.currencyCode.toUpperCase(),
+      weekStartsOn: dto.weekStartsOn,
+    };
+  }
+
+  private organizationView(organization: Organization) {
+    return {
+      id: organization.id,
+      code: organization.code,
+      name: organization.name,
+      legalName: organization.legalName,
+      taxCode: organization.taxCode,
+      email: organization.email,
+      phone: organization.phone,
+      address: organization.address,
+      timezone: organization.timezone,
+      currencyCode: organization.currencyCode.trim(),
+      weekStartsOn: organization.weekStartsOn,
+      createdAt: organization.createdAt,
+      updatedAt: organization.updatedAt,
+    };
+  }
 
   async getDashboard(actor: AuthUser) {
     const organization = await this.resolveOrganization(actor);
@@ -188,7 +289,12 @@ export class OrganizationService {
           };
           const feature = result.features?.[0];
           if (!feature) continue;
-          if (candidate === query && candidates.length > 1 && !feature.place_type?.includes("address")) continue;
+          if (
+            candidate === query &&
+            candidates.length > 1 &&
+            !feature.place_type?.includes("address")
+          )
+            continue;
           return {
             latitude: feature.center[1],
             longitude: feature.center[0],

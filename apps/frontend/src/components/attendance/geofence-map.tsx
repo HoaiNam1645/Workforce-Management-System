@@ -2,7 +2,9 @@
 
 import * as maplibregl from 'maplibre-gl';
 import type { GeoJSONSource, Map as MapLibreMap, MapMouseEvent, Marker } from 'maplibre-gl';
-import { useEffect, useRef } from 'react';
+import { LoaderCircle, RefreshCw } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { getMapStyleUrl } from '@/lib/map-provider';
 
 type GeofenceMapProps = {
   latitude: number | null;
@@ -12,7 +14,6 @@ type GeofenceMapProps = {
 };
 
 const DEFAULT_POSITION: [number, number] = [108.20623, 16.047079];
-const MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
 maplibregl.setWorkerUrl('/maplibre-gl-worker.mjs');
 
 export default function GeofenceMap({ latitude, longitude, radiusM, onPositionChange }: GeofenceMapProps) {
@@ -20,6 +21,8 @@ export default function GeofenceMap({ latitude, longitude, radiusM, onPositionCh
   const mapRef = useRef<MapLibreMap | null>(null);
   const markerRef = useRef<Marker | null>(null);
   const onPositionChangeRef = useRef(onPositionChange);
+  const [mapStatus, setMapStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [retryKey, setRetryKey] = useState(0);
   const longitudeValue = longitude ?? DEFAULT_POSITION[0];
   const latitudeValue = latitude ?? DEFAULT_POSITION[1];
 
@@ -29,9 +32,15 @@ export default function GeofenceMap({ latitude, longitude, radiusM, onPositionCh
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
+    const mapStyle = getMapStyleUrl();
+    if (!mapStyle) {
+      setMapStatus('error');
+      return;
+    }
+    setMapStatus('loading');
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: MAP_STYLE,
+      style: mapStyle,
       center: [longitudeValue, latitudeValue],
       zoom: 18,
       minZoom: 3,
@@ -48,15 +57,22 @@ export default function GeofenceMap({ latitude, longitude, radiusM, onPositionCh
       onPositionChangeRef.current(point.lat, point.lng);
     });
     map.on('click', (event: MapMouseEvent) => onPositionChangeRef.current(event.lngLat.lat, event.lngLat.lng));
+    const loadTimeout = window.setTimeout(() => setMapStatus('error'), 12_000);
     map.on('load', () => {
+      window.clearTimeout(loadTimeout);
+      setMapStatus('ready');
       map.addSource('geofence', { type: 'geojson', data: circleFeature(latitudeValue, longitudeValue, radiusM) });
       map.addLayer({ id: 'geofence-fill', type: 'fill', source: 'geofence', paint: { 'fill-color': '#60a5fa', 'fill-opacity': 0.2 } });
       map.addLayer({ id: 'geofence-line', type: 'line', source: 'geofence', paint: { 'line-color': '#2563eb', 'line-width': 2 } });
       fitRadius(map, latitudeValue, longitudeValue, radiusM);
     });
+    map.on('error', () => {
+      if (!map.isStyleLoaded()) setMapStatus('error');
+    });
     mapRef.current = map;
     markerRef.current = marker;
     return () => {
+      window.clearTimeout(loadTimeout);
       marker.remove();
       map.remove();
       mapRef.current = null;
@@ -64,7 +80,7 @@ export default function GeofenceMap({ latitude, longitude, radiusM, onPositionCh
     };
     // The map is initialized once; later coordinate changes are synchronized below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [retryKey]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -72,9 +88,23 @@ export default function GeofenceMap({ latitude, longitude, radiusM, onPositionCh
     if (!map?.isStyleLoaded()) return;
     (map.getSource('geofence') as GeoJSONSource | undefined)?.setData(circleFeature(latitudeValue, longitudeValue, radiusM));
     fitRadius(map, latitudeValue, longitudeValue, radiusM);
-  }, [latitudeValue, longitudeValue, radiusM]);
+  }, [latitudeValue, longitudeValue, radiusM, retryKey]);
 
-  return <div ref={containerRef} className="h-full min-h-80 w-full bg-canvas" />;
+  return (
+    <div className="relative h-full min-h-80 w-full bg-canvas">
+      <div ref={containerRef} className="absolute inset-0" />
+      {mapStatus === 'loading' && (
+        <div className="absolute inset-0 grid place-items-center bg-canvas/85">
+          <p className="flex items-center gap-2 text-xs font-bold text-muted"><LoaderCircle className="size-4 animate-spin text-brand" />Đang tải bản đồ...</p>
+        </div>
+      )}
+      {mapStatus === 'error' && (
+        <div className="absolute inset-0 grid place-items-center bg-canvas px-6 text-center">
+          <div><p className="text-sm font-extrabold">Không thể tải bản đồ</p><p className="mt-1 text-xs text-muted">Kiểm tra kết nối rồi tải lại bản đồ.</p><button type="button" className="mt-4 inline-flex h-9 items-center gap-2 border border-line bg-white px-3 text-xs font-bold" onClick={() => setRetryKey((value) => value + 1)}><RefreshCw className="size-4" />Tải lại</button></div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function fitRadius(map: MapLibreMap, latitude: number, longitude: number, radiusM: number) {

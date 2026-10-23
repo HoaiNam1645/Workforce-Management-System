@@ -154,7 +154,10 @@ export class OrganizationService {
   }
 
   async geocode(rawQuery: string) {
-    const query = rawQuery?.trim();
+    const query = rawQuery
+      ?.trim()
+      .replace(/Hoa Kỳ/gi, "United States")
+      .replace(/Mỹ/gi, "United States");
     if (!query || query.length < 3) {
       throw new BadRequestException("Địa chỉ tìm kiếm phải có ít nhất 3 ký tự");
     }

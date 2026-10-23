@@ -2,7 +2,9 @@
 
 import * as maplibregl from 'maplibre-gl';
 import type { GeoJSONSource, Map as MapLibreMap, Marker } from 'maplibre-gl';
-import { useEffect, useRef } from 'react';
+import { LoaderCircle, RefreshCw } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { getMapStyleUrl } from '@/lib/map-provider';
 
 type EmployeeLocationMapProps = {
   branchLatitude: number | null;
@@ -14,7 +16,6 @@ type EmployeeLocationMapProps = {
   withinGeofence: boolean | null;
 };
 
-const MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
 maplibregl.setWorkerUrl('/maplibre-gl-worker.mjs');
 
 export default function EmployeeLocationMap(props: EmployeeLocationMapProps) {
@@ -22,12 +23,20 @@ export default function EmployeeLocationMap(props: EmployeeLocationMapProps) {
   const mapRef = useRef<MapLibreMap | null>(null);
   const branchMarkerRef = useRef<Marker | null>(null);
   const employeeMarkerRef = useRef<Marker | null>(null);
+  const [mapStatus, setMapStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
+    const mapStyle = getMapStyleUrl();
+    if (!mapStyle) {
+      setMapStatus('error');
+      return;
+    }
+    setMapStatus('loading');
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: MAP_STYLE,
+      style: mapStyle,
       center: [props.employeeLongitude, props.employeeLatitude],
       zoom: 18,
       minZoom: 3,
@@ -36,8 +45,17 @@ export default function EmployeeLocationMap(props: EmployeeLocationMapProps) {
     });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
     map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
+    const loadTimeout = window.setTimeout(() => setMapStatus('error'), 12_000);
+    map.on('load', () => {
+      window.clearTimeout(loadTimeout);
+      setMapStatus('ready');
+    });
+    map.on('error', () => {
+      if (!map.isStyleLoaded()) setMapStatus('error');
+    });
     mapRef.current = map;
     return () => {
+      window.clearTimeout(loadTimeout);
       branchMarkerRef.current?.remove();
       employeeMarkerRef.current?.remove();
       map.remove();
@@ -45,7 +63,7 @@ export default function EmployeeLocationMap(props: EmployeeLocationMapProps) {
     };
     // The map instance is retained while its data is updated by the next effect.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [retryKey]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -72,9 +90,23 @@ export default function EmployeeLocationMap(props: EmployeeLocationMapProps) {
     };
     if (map.isStyleLoaded()) render();
     else map.once('load', render);
-  }, [props]);
+  }, [props, retryKey]);
 
-  return <div ref={containerRef} className="h-full min-h-64 w-full bg-canvas" />;
+  return (
+    <div className="relative h-full min-h-64 w-full bg-canvas">
+      <div ref={containerRef} className="absolute inset-0" />
+      {mapStatus === 'loading' && (
+        <div className="absolute inset-0 grid place-items-center bg-canvas/85">
+          <p className="flex items-center gap-2 text-xs font-bold text-muted"><LoaderCircle className="size-4 animate-spin text-brand" />Đang tải bản đồ...</p>
+        </div>
+      )}
+      {mapStatus === 'error' && (
+        <div className="absolute inset-0 grid place-items-center bg-canvas px-6 text-center">
+          <div><p className="text-sm font-extrabold">Không thể tải bản đồ</p><p className="mt-1 text-xs text-muted">Kiểm tra kết nối rồi tải lại bản đồ.</p><button type="button" className="mt-4 inline-flex h-9 items-center gap-2 border border-line bg-white px-3 text-xs font-bold" onClick={() => setRetryKey((value) => value + 1)}><RefreshCw className="size-4" />Tải lại</button></div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function setCircleSource(map: MapLibreMap, id: string, data: GeoJSON.Feature<GeoJSON.Polygon>, color: string, opacity: number) {

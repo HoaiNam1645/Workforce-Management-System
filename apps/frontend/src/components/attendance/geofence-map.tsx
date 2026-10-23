@@ -4,7 +4,7 @@ import * as maplibregl from 'maplibre-gl';
 import type { GeoJSONSource, Map as MapLibreMap, MapMouseEvent, Marker } from 'maplibre-gl';
 import { LoaderCircle, RefreshCw } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { getMapStyleUrl } from '@/lib/map-provider';
+import { getMapStyle } from '@/lib/map-provider';
 import { MapHost } from './map-host';
 
 type GeofenceMapProps = {
@@ -33,7 +33,7 @@ export default function GeofenceMap({ latitude, longitude, radiusM, onPositionCh
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
-    const mapStyle = getMapStyleUrl();
+    const mapStyle = getMapStyle();
     if (!mapStyle) {
       setMapStatus('error');
       return;

@@ -1,5 +1,7 @@
 "use client";
 
+import { formatApp } from "@/lib/app-timezone";
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format, startOfYear } from "date-fns";
 import {
@@ -692,7 +694,7 @@ function PolicyModal({
       ? policyToForm(policy)
       : {
           name: `Hạn mức ${item.name} ${new Date().getFullYear()}`,
-          effectiveFrom: format(startOfYear(new Date()), "yyyy-MM-dd"),
+          effectiveFrom: formatApp(startOfYear(new Date()), "yyyy-MM-dd"),
           effectiveTo: null,
           accrualMethod: "upfront",
           allowanceAmount: 12,
@@ -1209,5 +1211,5 @@ function accrualLabel(method: AccrualMethod) {
       : "Điều chỉnh thủ công";
 }
 function dateLabel(value: string) {
-  return format(new Date(`${value}T00:00:00`), "dd/MM/yyyy");
+  return formatApp(new Date(`${value}T00:00:00`), "dd/MM/yyyy");
 }

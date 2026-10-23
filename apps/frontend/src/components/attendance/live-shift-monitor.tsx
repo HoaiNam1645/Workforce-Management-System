@@ -1,5 +1,7 @@
 'use client';
 
+import { formatApp } from "@/lib/app-timezone";
+
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { vi } from 'date-fns/locale';
@@ -62,7 +64,7 @@ export function LiveShiftMonitor() {
   const [selectedShiftId, setSelectedShiftId] = useState('');
   const [stateFilter, setStateFilter] = useState<StateFilter>('all');
 
-  useEffect(() => setDate(format(new Date(), 'yyyy-MM-dd')), []);
+  useEffect(() => setDate(formatApp(new Date(), 'yyyy-MM-dd')), []);
 
   const live = useQuery({
     queryKey: ['live-shifts', date, branchId, departmentId],
@@ -98,7 +100,7 @@ export function LiveShiftMonitor() {
   }, [selectedShift, stateFilter]);
 
   const displayDate = date
-    ? format(new Date(`${date}T00:00:00`), "EEEE, 'ngày' dd/MM/yyyy", { locale: vi })
+    ? formatApp(new Date(`${date}T00:00:00`), "EEEE, 'ngày' dd/MM/yyyy", { locale: vi })
     : 'Đang xác định ngày';
 
   return (
@@ -117,7 +119,7 @@ export function LiveShiftMonitor() {
         </div>
         <div className="flex items-center gap-3 border border-line bg-surface px-3 py-2 text-xs text-muted shadow-panel">
           <CircleDot className="size-3.5 text-success" />
-          <span>{live.data ? `Cập nhật ${format(new Date(live.data.generatedAt), 'HH:mm:ss')}` : 'Chờ dữ liệu'}</span>
+          <span>{live.data ? `Cập nhật ${formatApp(new Date(live.data.generatedAt), 'HH:mm:ss')}` : 'Chờ dữ liệu'}</span>
           {live.isFetching && <LoaderCircle className="size-3.5 animate-spin text-brand" />}
         </div>
       </header>
@@ -240,8 +242,8 @@ function ShiftDetail({ shift, employees, stateFilter, setStateFilter, lateGraceM
             <p className="mt-2 text-sm text-muted">{shift.branch.name}{shift.department ? ` · ${shift.department.name}` : ''}{shift.position ? ` · ${shift.position.name}` : ''}</p>
           </div>
           <div className="grid grid-cols-2 gap-px bg-line text-center sm:grid-cols-4">
-            <ShiftFact label="Bắt đầu" value={format(new Date(shift.startsAt), 'HH:mm')} />
-            <ShiftFact label="Kết thúc" value={format(new Date(shift.endsAt), 'HH:mm')} />
+            <ShiftFact label="Bắt đầu" value={formatApp(new Date(shift.startsAt), 'HH:mm')} />
+            <ShiftFact label="Kết thúc" value={formatApp(new Date(shift.endsAt), 'HH:mm')} />
             <ShiftFact label="Break" value={formatDurationMinutes(shift.allowedBreakMinutes)} />
             <ShiftFact label="Nhân sự" value={`${shift.assignedHeadcount}/${shift.requiredHeadcount}`} danger={shift.missingHeadcount > 0} />
           </div>
@@ -330,9 +332,9 @@ function ErrorState({ message, retry }: { message: string; retry: () => void }) 
 }
 
 function timeRange(startsAt: string, endsAt: string) {
-  return `${format(new Date(startsAt), 'HH:mm')}–${format(new Date(endsAt), 'HH:mm')}`;
+  return `${formatApp(new Date(startsAt), 'HH:mm')}–${formatApp(new Date(endsAt), 'HH:mm')}`;
 }
 
 function clockValue(value: string | null) {
-  return value ? format(new Date(value), 'HH:mm') : '--:--';
+  return value ? formatApp(new Date(value), 'HH:mm') : '--:--';
 }

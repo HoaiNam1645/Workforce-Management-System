@@ -1,5 +1,7 @@
 "use client";
 
+import { formatApp, toUtcIsoInAppTimezone } from "@/lib/app-timezone";
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { addMonths, format, startOfMonth, endOfMonth } from "date-fns";
 import {
@@ -1054,7 +1056,7 @@ function PayrollDrawer({
                         {money(payment.amount)}
                       </p>
                       <p className="mt-1 text-[10px] text-muted">
-                        {format(new Date(payment.paidAt), "dd/MM/yyyy HH:mm")} ·{" "}
+                        {formatApp(new Date(payment.paidAt), "dd/MM/yyyy HH:mm")} ·{" "}
                         {payment.paymentMethod} ·{" "}
                         {payment.referenceNumber || "Không có mã tham chiếu"}
                       </p>
@@ -1146,14 +1148,14 @@ function PayrollDrawer({
 function PeriodForm({ close }: { close: () => void }) {
   const qc = useQueryClient();
   const now = new Date();
-  const from = format(startOfMonth(now), "yyyy-MM-dd");
-  const to = format(endOfMonth(now), "yyyy-MM-dd");
+  const from = formatApp(startOfMonth(now), "yyyy-MM-dd");
+  const to = formatApp(endOfMonth(now), "yyyy-MM-dd");
   const [form, setForm] = useState({
     code: generateBusinessCode("KL"),
-    name: `Lương tháng ${format(now, "MM/yyyy")}`,
+    name: `Lương tháng ${formatApp(now, "MM/yyyy")}`,
     startsOn: from,
     endsOn: to,
-    paymentDate: format(addMonths(startOfMonth(now), 1), "yyyy-MM-05"),
+    paymentDate: formatApp(addMonths(startOfMonth(now), 1), "yyyy-MM-05"),
   });
   const mutation = useMutation({
     mutationFn: () => createPayrollPeriod(form),
@@ -1227,7 +1229,7 @@ function SalaryForm({
     payType: "monthly" as "hourly" | "monthly",
     baseRate: 0,
     currencyCode: "VND",
-    effectiveFrom: format(new Date(), "yyyy-MM-dd"),
+    effectiveFrom: formatApp(new Date(), "yyyy-MM-dd"),
     effectiveTo: "",
     note: "",
   });
@@ -1343,7 +1345,7 @@ function RuleForm({ item, close }: { item?: PayrollRule; close: () => void }) {
           ruleType: "overtime",
           multiplier: 1.5,
           priority: 100,
-          effectiveFrom: format(new Date(), "yyyy-MM-dd"),
+          effectiveFrom: formatApp(new Date(), "yyyy-MM-dd"),
           isActive: true,
         },
   );
@@ -1572,7 +1574,7 @@ function PaymentForm({
 }) {
   const [form, setForm] = useState({
     amount: Number(payroll.balanceDue),
-    paidAt: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
+    paidAt: formatApp(new Date(), "yyyy-MM-dd'T'HH:mm"),
     paymentMethod: "bank_transfer",
     referenceNumber: "",
     note: "",
@@ -1581,7 +1583,7 @@ function PaymentForm({
     mutationFn: () =>
       recordPayrollPayment(payroll.id, {
         ...form,
-        paidAt: new Date(form.paidAt).toISOString(),
+        paidAt: toUtcIsoInAppTimezone(form.paidAt),
       }),
     meta: { successMessage: "Đã ghi nhận thanh toán" },
     onSuccess: saved,
@@ -2163,5 +2165,5 @@ function money(value: string | number | undefined) {
   }).format(Number(value ?? 0));
 }
 function date(value: string) {
-  return format(new Date(`${value}T00:00:00`), "dd/MM/yyyy");
+  return formatApp(new Date(`${value}T00:00:00`), "dd/MM/yyyy");
 }

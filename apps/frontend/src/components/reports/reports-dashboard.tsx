@@ -1,5 +1,7 @@
 "use client";
 
+import { formatApp } from "@/lib/app-timezone";
+
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -58,8 +60,8 @@ type MetricItem = {
   tone?: "warning";
 };
 
-const today = format(new Date(), "yyyy-MM-dd");
-const monthStart = format(startOfMonth(new Date()), "yyyy-MM-dd");
+const today = formatApp(new Date(), "yyyy-MM-dd");
+const monthStart = formatApp(startOfMonth(new Date()), "yyyy-MM-dd");
 
 export function ReportsDashboard() {
   const { hasPermission } = useAuth();
@@ -318,7 +320,7 @@ export function ReportsDashboard() {
           <DataState value={query.data.dataState} />
           <span>
             Cập nhật lúc{" "}
-            {format(new Date(query.data.generatedAt), "HH:mm:ss dd/MM/yyyy")}
+            {formatApp(new Date(query.data.generatedAt), "HH:mm:ss dd/MM/yyyy")}
           </span>
         </div>
       )}
@@ -792,7 +794,7 @@ function TrendChart({ rows }: { rows: ReportData["trend"] }) {
               key={row.key}
               className="min-w-8 flex-1 text-center text-[9px] text-muted"
             >
-              {format(new Date(`${row.key}T12:00:00`), "dd/MM")}
+              {formatApp(new Date(`${row.key}T12:00:00`), "dd/MM")}
             </span>
           ))}
         </div>
@@ -970,15 +972,15 @@ function tenure(days: number) {
 }
 
 function dateValue(value: string | null) {
-  return value ? format(new Date(`${value.slice(0, 10)}T12:00:00`), "dd/MM/yyyy") : "—";
+  return value ? formatApp(new Date(`${value.slice(0, 10)}T12:00:00`), "dd/MM/yyyy") : "—";
 }
 
 function dateTime(value: string | null) {
-  return value ? format(new Date(value), "dd/MM/yyyy HH:mm") : "—";
+  return value ? formatApp(new Date(value), "dd/MM/yyyy HH:mm") : "—";
 }
 
 function timeValue(value: string | null) {
-  return value ? format(new Date(value), "HH:mm:ss") : "—";
+  return value ? formatApp(new Date(value), "HH:mm:ss") : "—";
 }
 
 function moneyValue(value: number, currency: string) {

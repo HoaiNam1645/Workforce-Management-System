@@ -1,5 +1,7 @@
 "use client";
 
+import { formatApp } from "@/lib/app-timezone";
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format, subDays } from "date-fns";
 import {
@@ -101,8 +103,8 @@ export function AttendanceAnomalyDashboard() {
   const pathname = usePathname();
   const params = useSearchParams();
   const from =
-    params.get("anomalyFrom") ?? format(subDays(new Date(), 29), "yyyy-MM-dd");
-  const to = params.get("anomalyTo") ?? format(new Date(), "yyyy-MM-dd");
+    params.get("anomalyFrom") ?? formatApp(subDays(new Date(), 29), "yyyy-MM-dd");
+  const to = params.get("anomalyTo") ?? formatApp(new Date(), "yyyy-MM-dd");
   const type = params.get("anomalyType") ?? "";
   const status = params.get("anomalyStatus") ?? "";
   const severity = params.get("anomalySeverity") ?? "";
@@ -771,7 +773,7 @@ function AnomalyDetailDrawer({ id, close }: { id: string; close: () => void }) {
                 <span className="text-muted">
                   {item.exclusion.by} ·{" "}
                   {item.exclusion.at
-                    ? format(new Date(item.exclusion.at), "dd/MM/yyyy HH:mm")
+                    ? formatApp(new Date(item.exclusion.at), "dd/MM/yyyy HH:mm")
                     : ""}
                 </span>
               </div>
@@ -867,7 +869,7 @@ function Timeline({ item }: { item: AttendanceAnomalyDetail }) {
             </p>
             <p className="mt-2 font-mono text-xs font-extrabold">
               {point.value
-                ? format(new Date(point.value), "dd/MM HH:mm")
+                ? formatApp(new Date(point.value), "dd/MM HH:mm")
                 : "--"}
             </p>
           </div>
@@ -949,7 +951,7 @@ function Evidence({ events }: { events: AttendanceAnomalyDetail["events"] }) {
               <div className="flex flex-wrap items-center gap-2">
                 <p className="text-xs font-extrabold">
                   {eventLabel(event.type)} ·{" "}
-                  {format(new Date(event.occurredAt), "HH:mm:ss dd/MM/yyyy")}
+                  {formatApp(new Date(event.occurredAt), "HH:mm:ss dd/MM/yyyy")}
                 </p>
                 {event.rejected && (
                   <span className="bg-danger px-2 py-0.5 text-[9px] font-black uppercase text-white">
@@ -1007,7 +1009,7 @@ function HistoryPanel({
             </p>
             <p className="mt-1 text-[10px] text-muted">
               {item.actor} ·{" "}
-              {format(new Date(item.createdAt), "dd/MM/yyyy HH:mm:ss")}
+              {formatApp(new Date(item.createdAt), "dd/MM/yyyy HH:mm:ss")}
             </p>
             {item.reason && <p className="mt-1 text-xs">{item.reason}</p>}
           </div>
@@ -1144,20 +1146,20 @@ function severityLabel(value: string) {
 }
 function timeRange(item: AttendanceAnomalyItem) {
   if (item.actualStartAt || item.actualEndAt)
-    return `${item.actualStartAt ? format(new Date(item.actualStartAt), "HH:mm") : "--:--"} → ${item.actualEndAt ? format(new Date(item.actualEndAt), "HH:mm") : "--:--"}`;
+    return `${item.actualStartAt ? formatApp(new Date(item.actualStartAt), "HH:mm") : "--:--"} → ${item.actualEndAt ? formatApp(new Date(item.actualEndAt), "HH:mm") : "--:--"}`;
   return item.scheduledStartAt
-    ? format(new Date(item.scheduledStartAt), "HH:mm")
+    ? formatApp(new Date(item.scheduledStartAt), "HH:mm")
     : "--:--";
 }
 function formatDate(value: string) {
-  return format(new Date(`${value}T12:00:00`), "dd/MM/yyyy");
+  return formatApp(new Date(`${value}T12:00:00`), "dd/MM/yyyy");
 }
 function formatValue(value: unknown): string {
   if (value === null || value === undefined) return "--";
   if (Array.isArray(value)) return value.join(", ");
   if (typeof value === "object") return JSON.stringify(value);
   if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}T/.test(value))
-    return format(new Date(value), "dd/MM/yyyy HH:mm:ss");
+    return formatApp(new Date(value), "dd/MM/yyyy HH:mm:ss");
   return String(value);
 }
 function formatCalculationValue(key: string, value: unknown): string {
@@ -1165,7 +1167,7 @@ function formatCalculationValue(key: string, value: unknown): string {
   if (key.endsWith("Minutes") && typeof value === "number")
     return formatDurationMinutes(value);
   if (key.endsWith("At") && typeof value === "string")
-    return format(new Date(value), "dd/MM/yyyy HH:mm:ss");
+    return formatApp(new Date(value), "dd/MM/yyyy HH:mm:ss");
   if (key.endsWith("DistanceM") || key === "radiusM") return `${value}m`;
   return formatValue(value);
 }

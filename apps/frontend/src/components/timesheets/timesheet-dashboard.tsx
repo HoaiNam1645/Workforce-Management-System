@@ -1,5 +1,7 @@
 "use client";
 
+import { formatApp } from "@/lib/app-timezone";
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   endOfMonth,
@@ -75,8 +77,8 @@ type TimesheetItem = TimesheetReport["timesheets"][number];
 type WorkflowAction = "approve" | "return" | "lock" | "unlock";
 
 const today = new Date();
-const defaultFrom = format(startOfMonth(today), "yyyy-MM-dd");
-const defaultTo = format(today, "yyyy-MM-dd");
+const defaultFrom = formatApp(startOfMonth(today), "yyyy-MM-dd");
+const defaultTo = formatApp(today, "yyyy-MM-dd");
 
 export function TimesheetDashboard() {
   const { hasPermission } = useAuth();
@@ -167,19 +169,19 @@ export function TimesheetDashboard() {
     const now = new Date();
     if (preset === "week") {
       updateFilterQuery({
-        from: format(startOfWeek(now, { weekStartsOn: 1 }), "yyyy-MM-dd"),
-        to: format(now, "yyyy-MM-dd"),
+        from: formatApp(startOfWeek(now, { weekStartsOn: 1 }), "yyyy-MM-dd"),
+        to: formatApp(now, "yyyy-MM-dd"),
       });
     } else if (preset === "month") {
       updateFilterQuery({
-        from: format(startOfMonth(now), "yyyy-MM-dd"),
-        to: format(now, "yyyy-MM-dd"),
+        from: formatApp(startOfMonth(now), "yyyy-MM-dd"),
+        to: formatApp(now, "yyyy-MM-dd"),
       });
     } else {
       const previous = subDays(startOfMonth(now), 1);
       updateFilterQuery({
-        from: format(startOfMonth(previous), "yyyy-MM-dd"),
-        to: format(endOfMonth(previous), "yyyy-MM-dd"),
+        from: formatApp(startOfMonth(previous), "yyyy-MM-dd"),
+        to: formatApp(endOfMonth(previous), "yyyy-MM-dd"),
       });
     }
   };
@@ -429,7 +431,7 @@ export function TimesheetDashboard() {
 
           <p className="text-right text-[10px] text-muted">
             Dữ liệu cập nhật lúc{" "}
-            {format(new Date(data.generatedAt), "HH:mm:ss dd/MM/yyyy")} · Múi
+            {formatApp(new Date(data.generatedAt), "HH:mm:ss dd/MM/yyyy")} · Múi
             giờ {data.range.timezone}
           </p>
           {adjusting && (
@@ -479,7 +481,7 @@ function TimesheetProgress({
     },
     { draft: 0, approved: 0, locked: 0 },
   );
-  const todayValue = format(new Date(), "yyyy-MM-dd");
+  const todayValue = formatApp(new Date(), "yyyy-MM-dd");
   const periodStillOpen = to >= todayValue;
 
   return (
@@ -497,7 +499,7 @@ function TimesheetProgress({
           <div className="flex flex-wrap items-center gap-2 text-xs text-warning-strong">
             <AlertTriangle className="size-4" />
             <span>{to === todayValue ? "Kỳ công kết thúc hôm nay, chưa thể duyệt." : "Kỳ công chưa kết thúc, chưa thể duyệt."}</span>
-            <Button size="sm" variant="outline" onClick={() => updateTo(format(subDays(new Date(), 1), "yyyy-MM-dd"))}>
+            <Button size="sm" variant="outline" onClick={() => updateTo(formatApp(subDays(new Date(), 1), "yyyy-MM-dd"))}>
               Chọn đến hôm qua
             </Button>
           </div>
@@ -1418,7 +1420,7 @@ function HistoryRow({ item }: { item: TimesheetHistoryItem }) {
           <p className="text-xs font-extrabold">{historyAction(item.action)}</p>
           <p className="mt-1 text-[11px] text-muted">
             {item.actor} ·{" "}
-            {format(new Date(item.createdAt), "HH:mm dd/MM/yyyy")}
+            {formatApp(new Date(item.createdAt), "HH:mm dd/MM/yyyy")}
           </p>
         </div>
         <span
@@ -1709,8 +1711,8 @@ function initials(name: string) {
     .join("");
 }
 function formatDate(value: string) {
-  return format(new Date(`${value}T00:00:00`), "EEE, dd/MM", { locale: vi });
+  return formatApp(new Date(`${value}T00:00:00`), "EEE, dd/MM", { locale: vi });
 }
 function timeRange(start: string | null, end: string | null) {
-  return `${start ? format(new Date(start), "HH:mm") : "--:--"} → ${end ? format(new Date(end), "HH:mm") : "--:--"}`;
+  return `${start ? formatApp(new Date(start), "HH:mm") : "--:--"} → ${end ? formatApp(new Date(end), "HH:mm") : "--:--"}`;
 }

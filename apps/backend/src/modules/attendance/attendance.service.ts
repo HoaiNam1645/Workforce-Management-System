@@ -377,9 +377,11 @@ export class AttendanceService {
   async getLiveShifts(query: LiveShiftQueryDto, actor: AuthUser) {
     const now = new Date();
     await this.reconcileOpenRecords(undefined, now);
-    const workDate = query.date ?? this.dateInTimezone(now, 'Asia/Ho_Chi_Minh');
-    const parsedDate = new Date(`${workDate}T00:00:00+07:00`);
-    if (Number.isNaN(parsedDate.getTime()) || this.dateInTimezone(parsedDate, 'Asia/Ho_Chi_Minh') !== workDate) {
+    const [organization] = await this.dataSource.query<Array<{ timezone: string }>>(
+      'SELECT timezone FROM workforce.organizations ORDER BY created_at ASC LIMIT 1',
+    );
+    const workDate = query.date ?? this.dateInTimezone(now, organization?.timezone ?? 'UTC');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(workDate) || Number.isNaN(new Date(`${workDate}T00:00:00Z`).getTime())) {
       throw new BadRequestException('Ngày theo dõi không hợp lệ');
     }
 

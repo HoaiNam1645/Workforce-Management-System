@@ -1,5 +1,7 @@
 'use client';
 
+import { todayInAppTimezone } from '@/lib/app-timezone';
+
 import {
   AlertCircle,
   BadgeDollarSign,
@@ -179,7 +181,7 @@ function SalaryTab({ employeeId, canManage }: Readonly<{ employeeId: string; can
   const [isAdding, setIsAdding] = useState(false);
   const [payType, setPayType] = useState<'hourly' | 'monthly'>('monthly');
   const [baseRate, setBaseRate] = useState('');
-  const [effectiveFrom, setEffectiveFrom] = useState(new Date().toISOString().slice(0, 10));
+  const [effectiveFrom, setEffectiveFrom] = useState(todayInAppTimezone());
   const [note, setNote] = useState('');
   const query = useQuery({ queryKey: ['employee-salary-rates', employeeId], queryFn: () => getSalaryRates(employeeId) });
   const mutation = useMutation({

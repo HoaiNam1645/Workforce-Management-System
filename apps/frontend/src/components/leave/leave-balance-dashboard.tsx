@@ -1,5 +1,7 @@
 'use client';
 
+import { formatApp } from "@/lib/app-timezone";
+
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { AlertTriangle, ArrowDownRight, ArrowUpRight, CalendarClock, History, LoaderCircle, PencilLine, Search, UsersRound, WalletCards, X } from 'lucide-react';
@@ -54,7 +56,7 @@ function AdjustmentModal({ item, options, close }: { item: LeaveBalanceItem | nu
   const [year, setYear] = useState(item?.year ?? new Date().getFullYear());
   const [direction, setDirection] = useState<'increase' | 'decrease'>('increase');
   const [value, setValue] = useState(1);
-  const [effectiveDate, setEffectiveDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [effectiveDate, setEffectiveDate] = useState(formatApp(new Date(), 'yyyy-MM-dd'));
   const [reason, setReason] = useState('');
   const selectedType = options.leaveTypes.find((type) => type.id === leaveTypeId);
   const mutation = useMutation({ mutationFn: () => adjustLeaveBalance({ employeeId, leaveTypeId, balanceYear: year, direction, amount: value, effectiveDate, reason }), meta: { successMessage: 'Đã điều chỉnh số dư phép' }, onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['leave-balances'] }); close(); } });
@@ -78,5 +80,5 @@ function ErrorBox({ message }: { message: string }) { return <div className="mt-
 function amount(value: number) { return Number(value.toFixed(2)).toLocaleString('vi-VN'); }
 function unitName(unit: 'day' | 'hour') { return unit === 'hour' ? 'giờ' : 'ngày'; }
 function unitTotals(values: Record<'day' | 'hour', Record<'granted' | 'reserved' | 'used' | 'available', number>>, key: 'granted' | 'reserved' | 'used' | 'available') { const parts = ([['day', 'ngày'], ['hour', 'giờ']] as const).filter(([unit]) => values[unit][key] !== 0).map(([unit, label]) => `${amount(values[unit][key])} ${label}`); return parts.length ? parts.join(' · ') : '0'; }
-function formatDate(value: string) { return format(new Date(`${value}T00:00:00`), 'dd/MM/yyyy'); }
+function formatDate(value: string) { return formatApp(new Date(`${value}T00:00:00`), 'dd/MM/yyyy'); }
 function transactionLabel(type: string) { return ({ opening: 'Số dư đầu kỳ', accrual: 'Cấp phép', reservation: 'Giữ chỗ', release: 'Hoàn giữ chỗ', usage: 'Sử dụng phép', refund: 'Hoàn phép', adjustment: 'Điều chỉnh', expiry: 'Hết hạn' } as Record<string, string>)[type] ?? type; }

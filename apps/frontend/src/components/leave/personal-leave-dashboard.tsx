@@ -1,5 +1,7 @@
 'use client';
 
+import { formatApp } from "@/lib/app-timezone";
+
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { AlertTriangle, CalendarDays, CheckCircle2, Clock3, FileText, LoaderCircle, Plus, Send, WalletCards, X } from 'lucide-react';
@@ -27,7 +29,7 @@ function BalanceCards({ types }: { types: MyLeaveData['leaveTypes'] }) { return 
 function RequestModal({ data, close }: { data: MyLeaveData; close: () => void }) {
   const queryClient = useQueryClient();
   const firstType = data.leaveTypes[0];
-  const [payload, setPayload] = useState<LeaveRequestPayload>({ leaveTypeId: firstType?.id ?? '', requestMode: 'full_day', startDate: format(new Date(), 'yyyy-MM-dd'), endDate: format(new Date(), 'yyyy-MM-dd'), dayPart: null, startTime: '08:00', endTime: '12:00', reason: '', attachmentUrl: null });
+  const [payload, setPayload] = useState<LeaveRequestPayload>({ leaveTypeId: firstType?.id ?? '', requestMode: 'full_day', startDate: formatApp(new Date(), 'yyyy-MM-dd'), endDate: formatApp(new Date(), 'yyyy-MM-dd'), dayPart: null, startTime: '08:00', endTime: '12:00', reason: '', attachmentUrl: null });
   const selected = data.leaveTypes.find((type) => type.id === payload.leaveTypeId);
   const preview = useMutation({ mutationFn: () => previewLeaveRequest(payload), meta: { successMessage: false } });
   const submit = useMutation({ mutationFn: () => createLeaveRequest(payload), meta: { successMessage: 'Đã gửi yêu cầu nghỉ phép' }, onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['my-leave'] }); close(); } });
@@ -57,4 +59,4 @@ function DateField({ label, value, change, min, disabled }: { label: string; val
 function TimeField({ label, value, change }: { label: string; value: string; change: (value: string) => void }) { return <label><Label>{label}</Label><input type="time" value={value} onChange={(event) => change(event.target.value)} className="input" /></label>; }
 function unitLabel(unit: string) { return unit === 'day' ? 'Theo ngày' : unit === 'hour' ? 'Theo giờ' : 'Theo ngày và giờ'; }
 function requestMode(mode: string, dayPart: string | null) { return mode === 'hourly' ? 'Nghỉ theo giờ' : mode === 'half_day' ? dayPart === 'second_half' ? 'Nửa ngày cuối' : 'Nửa ngày đầu' : 'Nghỉ cả ngày'; }
-function requestRange(request: MyLeaveData['requests'][number]) { const start = new Date(request.startsAt); const end = new Date(request.endsAt); if (request.requestMode === 'hourly') return `${format(start, 'HH:mm')} - ${format(end, 'HH:mm')} · ${format(start, 'dd/MM/yyyy')}`; const inclusiveEnd = new Date(end.getTime() - 1); return `${format(start, 'dd/MM/yyyy')}${format(start, 'yyyy-MM-dd') === format(inclusiveEnd, 'yyyy-MM-dd') ? '' : ` - ${format(inclusiveEnd, 'dd/MM/yyyy')}`}`; }
+function requestRange(request: MyLeaveData['requests'][number]) { const start = new Date(request.startsAt); const end = new Date(request.endsAt); if (request.requestMode === 'hourly') return `${formatApp(start, 'HH:mm')} - ${formatApp(end, 'HH:mm')} · ${formatApp(start, 'dd/MM/yyyy')}`; const inclusiveEnd = new Date(end.getTime() - 1); return `${formatApp(start, 'dd/MM/yyyy')}${formatApp(start, 'yyyy-MM-dd') === formatApp(inclusiveEnd, 'yyyy-MM-dd') ? '' : ` - ${formatApp(inclusiveEnd, 'dd/MM/yyyy')}`}`; }

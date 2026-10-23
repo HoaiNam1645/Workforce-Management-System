@@ -1,5 +1,7 @@
 "use client";
 
+import { formatApp, getAppTimezone } from "@/lib/app-timezone";
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
@@ -35,11 +37,11 @@ import {
   getBranch,
   getBranches,
   getDepartments,
-  geocodeAddress,
   getPositions,
   getOrganizationProfile,
   grantBranchScope,
   revokeBranchScope,
+  resolveAddressTimezone,
   saveBranch,
   saveDepartment,
   saveOperatingHours,
@@ -101,8 +103,13 @@ function OrganizationProfileForm({
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ["organization-profile"] });
       await qc.invalidateQueries({ queryKey: ["organization-dashboard"] });
+      await qc.invalidateQueries({ queryKey: ["organization-time-context"] });
       close?.();
     },
+  });
+  const timezoneMutation = useMutation({
+    mutationFn: () => resolveAddressTimezone(form.address?.trim() ?? ""),
+    onSuccess: (result) => setForm({ ...form, timezone: result.timezone }),
   });
   const valid =
     form.name.trim().length >= 2 &&
@@ -163,6 +170,26 @@ function OrganizationProfileForm({
                 />
               </div>
             </div>
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs text-muted">
+                Tự xác định múi giờ IANA từ địa chỉ, bao gồm thay đổi giờ mùa
+                hè.
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                loading={timezoneMutation.isPending}
+                loadingText="Đang xác định"
+                disabled={(form.address?.trim().length ?? 0) < 5}
+                onClick={() => timezoneMutation.mutate()}
+              >
+                <MapPin className="size-4" />
+                Xác định múi giờ
+              </Button>
+            </div>
+            {timezoneMutation.isError && (
+              <FormError message={timezoneMutation.error.message} />
+            )}
           </section>
           <section className="border-t border-line pt-6">
             <h2 className="text-sm font-black">Thiết lập vận hành</h2>
@@ -171,7 +198,7 @@ function OrganizationProfileForm({
                 label="Múi giờ"
                 value={form.timezone}
                 change={(timezone) => setForm({ ...form, timezone })}
-                options={timezones}
+                options={organizationTimezones}
               />
               <Select
                 label="Tiền tệ"
@@ -953,7 +980,7 @@ function BranchForm({
           geofenceEnabled: false,
           geofenceRadiusM: 100,
           locationAccuracyM: 100,
-          timezone: "Asia/Ho_Chi_Minh",
+          timezone: getAppTimezone(),
           isHeadOffice: false,
           isActive: true,
           notes: null,
@@ -999,11 +1026,11 @@ function BranchForm({
       // A full address may already contain its country (for example a US address),
       // so do not silently append the form's default country before trying it.
       const rawAddress = form.addressLine.trim();
-      const result =
-        (await geocodeAddress(rawAddress)) ??
-        (addressQuery !== rawAddress
-          ? await geocodeAddress(addressQuery)
-          : null);
+      const result = await resolveAddressTimezone(rawAddress).catch(() =>
+        addressQuery !== rawAddress
+          ? resolveAddressTimezone(addressQuery).catch(() => null)
+          : null,
+      );
       if (!result) {
         setMapError(
           "Không tìm thấy địa chỉ. Hãy bổ sung quận, tỉnh hoặc kéo ghim đến vị trí đúng.",
@@ -1014,6 +1041,7 @@ function BranchForm({
         ...form,
         latitude: result.latitude,
         longitude: result.longitude,
+        timezone: result.timezone,
       });
     } catch (error) {
       setMapError(
@@ -1080,7 +1108,7 @@ function BranchForm({
                 label="Múi giờ"
                 value={form.timezone}
                 change={(v) => setForm({ ...form, timezone: v })}
-                options={timezones}
+                options={organizationTimezones}
               />
             </div>
             <details className="mt-4 border-t border-line pt-3">
@@ -1544,7 +1572,7 @@ function BranchDrawer({
             <SimpleTable
               rows={data.shifts.map((v) => [
                 v.name,
-                format(new Date(v.startsAt), "dd/MM/yyyy HH:mm"),
+                formatApp(new Date(v.startsAt), "dd/MM/yyyy HH:mm"),
                 v.department ?? "Mọi phòng ban",
                 v.status,
               ])}
@@ -1561,7 +1589,7 @@ function BranchDrawer({
                   <p className="text-xs font-extrabold">{v.action}</p>
                   <p className="mt-1 text-[10px] text-muted">
                     {v.actor} ·{" "}
-                    {format(new Date(v.createdAt), "dd/MM/yyyy HH:mm")}
+                    {formatApp(new Date(v.createdAt), "dd/MM/yyyy HH:mm")}
                   </p>
                 </div>
               ))}
@@ -1694,7 +1722,7 @@ function EndManagerForm({
   const { hasPermission } = useAuth();
   const canManageScope = hasPermission("branches.scope.manage");
   const [effectiveTo, setEffectiveTo] = useState(
-    format(new Date(), "yyyy-MM-dd"),
+    formatApp(new Date(), "yyyy-MM-dd"),
   );
   const [reason, setReason] = useState("");
   const [revokeManagerScope, setRevokeManagerScope] = useState(false);
@@ -1787,7 +1815,7 @@ function BranchScopesPanel({
               <p className="text-xs text-muted">{scope.email}</p>
               <Badge variant="info">{scope.role}</Badge>
               <p className="font-mono text-[10px] text-muted">
-                {format(new Date(scope.grantedAt), "dd/MM/yyyy")}
+                {formatApp(new Date(scope.grantedAt), "dd/MM/yyyy")}
               </p>
               <button
                 className="text-left text-xs font-bold text-danger sm:text-right"
@@ -2021,7 +2049,7 @@ function HoursForm({
             setExceptions([
               ...exceptions,
               {
-                exceptionDate: format(new Date(), "yyyy-MM-dd"),
+                exceptionDate: formatApp(new Date(), "yyyy-MM-dd"),
                 isClosed: true,
                 opensAt: null,
                 closesAt: null,
@@ -2174,7 +2202,7 @@ function ManagerForm({
     employeeId: "",
     responsibility: "Quản lý chi nhánh",
     isPrimary: !branch.managers.some((v) => v.active && v.isPrimary),
-    effectiveFrom: format(new Date(), "yyyy-MM-dd"),
+    effectiveFrom: formatApp(new Date(), "yyyy-MM-dd"),
     grantManagerScope: canManageScope,
   });
   const mutation = useMutation({
@@ -2588,7 +2616,20 @@ const timezones: Array<[string, string]> = [
   ["Asia/Tokyo", "Tokyo"],
   ["Europe/London", "London"],
   ["America/New_York", "New York"],
+  ["America/Chicago", "Central Time · America/Chicago"],
 ];
+const organizationTimezones: Array<[string, string]> = (() => {
+  const supported =
+    typeof Intl.supportedValuesOf === "function"
+      ? Intl.supportedValuesOf("timeZone")
+      : timezones.map(([value]) => value);
+  return [...new Set(["America/Chicago", ...supported])].map((value) => [
+    value,
+    value === "America/Chicago"
+      ? "Central Time · America/Chicago"
+      : value.replaceAll("_", " "),
+  ]);
+})();
 const dayNames = [
   "Chủ nhật",
   "Thứ hai",
@@ -2602,7 +2643,7 @@ function typeLabel(v: string) {
   return branchTypes.find(([key]) => key === v)?.[1] ?? v;
 }
 function date(v: string) {
-  return format(new Date(`${v}T00:00:00`), "dd/MM/yyyy");
+  return formatApp(new Date(`${v}T00:00:00`), "dd/MM/yyyy");
 }
 function Filters({
   search,

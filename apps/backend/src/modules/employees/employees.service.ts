@@ -509,7 +509,7 @@ export class EmployeesService {
       await this.dataSource.transaction(async (manager) => {
         await manager.save(Employee, employee);
         if (assignmentChanged) {
-          const effectiveDate = this.today();
+          const effectiveDate = await this.today();
           await manager.update(EmployeeWorkHistory, { employeeId: id, effectiveTo: IsNull() }, { effectiveTo: effectiveDate });
           await manager.save(EmployeeWorkHistory, manager.create(EmployeeWorkHistory, {
             employeeId: id,
@@ -537,7 +537,7 @@ export class EmployeesService {
 
   async remove(id: string) {
     const employee = await this.getEmployeeEntity(id);
-    const today = this.today();
+    const today = await this.today();
     await this.dataSource.transaction(async (manager) => {
       employee.deletedAt = new Date();
       employee.updatedAt = new Date();
@@ -656,8 +656,10 @@ export class EmployeesService {
     return { items: [], pagination: { page, limit, total: 0, totalPages: 0 } };
   }
 
-  private today() {
-    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
+  private async today() {
+    const organization = await this.organizationRepository.createQueryBuilder('organization')
+      .orderBy('organization.created_at', 'ASC').getOne();
+    return new Intl.DateTimeFormat('en-CA', { timeZone: organization?.timezone ?? 'UTC' }).format(new Date());
   }
 
   private previousDate(date: string) {

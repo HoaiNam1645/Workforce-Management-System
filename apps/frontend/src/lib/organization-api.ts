@@ -44,6 +44,14 @@ export function getOrganizationProfile() {
   }>("/organization/profile");
 }
 
+export function getOrganizationTimeContext() {
+  return apiRequest<{
+    timezone: string;
+    weekStartsOn: number;
+    currencyCode: string;
+  }>("/organization/time-context");
+}
+
 export function saveOrganizationProfile(
   payload: OrganizationProfilePayload,
   configured: boolean,
@@ -52,6 +60,15 @@ export function saveOrganizationProfile(
     method: configured ? "PATCH" : "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export function resolveAddressTimezone(address: string) {
+  return apiRequest<{
+    latitude: number;
+    longitude: number;
+    displayName: string;
+    timezone: string;
+  }>(`/organization/resolve-timezone?q=${encodeURIComponent(address)}`);
 }
 const query = (filters: OrganizationFilters) => {
   const params = new URLSearchParams();

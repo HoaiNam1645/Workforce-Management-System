@@ -40,6 +40,11 @@ export class OrganizationController {
     return this.service.getProfile();
   }
 
+  @Get("time-context")
+  timeContext() {
+    return this.service.getTimeContext();
+  }
+
   @Post("profile")
   @RequirePermissions("branches.manage")
   createProfile(
@@ -68,6 +73,12 @@ export class OrganizationController {
   @RequirePermissions("branches.geofence.manage")
   geocode(@Query("q") query: string) {
     return this.service.geocode(query);
+  }
+
+  @Get("resolve-timezone")
+  @RequirePermissions("organization.view")
+  resolveTimezone(@Query("q") query: string) {
+    return this.service.resolveTimezone(query);
   }
 
   @Get("branches")

@@ -45,6 +45,7 @@ import { Branch } from "./entities/branch.entity";
 import { DepartmentPosition } from "./entities/department-position.entity";
 import { Department } from "./entities/department.entity";
 import { Position } from "./entities/position.entity";
+import tzLookup from "tz-lookup";
 
 type Scope = {
   unrestricted: boolean;
@@ -88,6 +89,28 @@ export class OrganizationService {
     return {
       configured: Boolean(organization),
       organization: organization ? this.organizationView(organization) : null,
+    };
+  }
+
+  async getTimeContext() {
+    const profile = await this.getProfile();
+    return {
+      timezone: profile.organization?.timezone ?? "UTC",
+      weekStartsOn: profile.organization?.weekStartsOn ?? 1,
+      currencyCode: profile.organization?.currencyCode ?? "USD",
+    };
+  }
+
+  async resolveTimezone(query: string) {
+    const location = await this.geocode(query);
+    if (!location) {
+      throw new BadRequestException(
+        "Không tìm thấy địa chỉ để xác định múi giờ",
+      );
+    }
+    return {
+      ...location,
+      timezone: tzLookup(location.latitude, location.longitude),
     };
   }
 
@@ -149,6 +172,11 @@ export class OrganizationService {
   }
 
   private organizationPayload(dto: SaveOrganizationDto) {
+    try {
+      new Intl.DateTimeFormat("en-US", { timeZone: dto.timezone }).format();
+    } catch {
+      throw new BadRequestException("Múi giờ không hợp lệ");
+    }
     return {
       name: dto.name.trim(),
       legalName: dto.legalName?.trim() || null,
@@ -182,6 +210,9 @@ export class OrganizationService {
 
   async getDashboard(actor: AuthUser) {
     const organization = await this.resolveOrganization(actor);
+    const organizationDate = new Intl.DateTimeFormat("en-CA", {
+      timeZone: organization.timezone,
+    }).format(new Date());
     const [setup] = await this.dataSource.query(
       `SELECT
         (SELECT count(*)::int FROM workforce.branches WHERE organization_id=$1 AND deleted_at IS NULL) branches,
@@ -204,12 +235,14 @@ export class OrganizationService {
         count(ar.id) FILTER (WHERE ar.status IN ('missing_check_in','absent'))::int missing,
         count(v.id) FILTER (WHERE v.status IN ('active','provisional'))::int anomalies
        FROM workforce.shifts s
+       JOIN workforce.branches b ON b.id=s.branch_id
        LEFT JOIN workforce.shift_assignments sa ON sa.shift_id=s.id
-       LEFT JOIN workforce.attendance_records ar ON ar.shift_assignment_id=sa.id AND ar.work_date=CURRENT_DATE
-       LEFT JOIN workforce.attendance_violations v ON v.shift_assignment_id=sa.id AND v.violation_date=CURRENT_DATE
+       LEFT JOIN workforce.attendance_records ar ON ar.shift_assignment_id=sa.id AND ar.work_date=$1::date
+       LEFT JOIN workforce.attendance_violations v ON v.shift_assignment_id=sa.id AND v.violation_date=$1::date
        WHERE s.deleted_at IS NULL AND s.status='published'
-         AND s.starts_at < CURRENT_DATE + interval '1 day'
-         AND s.ends_at >= CURRENT_DATE`,
+         AND DATE(s.starts_at AT TIME ZONE b.timezone) <= $1::date
+         AND DATE(s.ends_at AT TIME ZONE b.timezone) >= $1::date`,
+      [organizationDate],
     );
     const [pending] = await this.dataSource.query(
       `SELECT
@@ -218,12 +251,13 @@ export class OrganizationService {
     );
     const chart = await this.dataSource.query(
       `WITH days AS (
-        SELECT generate_series(CURRENT_DATE-6, CURRENT_DATE, interval '1 day')::date AS work_date
+        SELECT generate_series($1::date-6, $1::date, interval '1 day')::date AS work_date
       )
       SELECT to_char(d.work_date,'YYYY-MM-DD') work_day,
         coalesce((SELECT sum(greatest(extract(epoch FROM (s.ends_at-s.starts_at))/60-s.unpaid_break_minutes,0)) FROM workforce.shifts s WHERE s.deleted_at IS NULL AND s.status='published' AND s.starts_at::date=d.work_date),0)::int planned,
         coalesce((SELECT sum(ar.worked_minutes) FROM workforce.attendance_records ar WHERE ar.work_date=d.work_date),0)::int actual
       FROM days d ORDER BY d.work_date`,
+      [organizationDate],
     );
     return {
       setup: {
@@ -435,7 +469,7 @@ export class OrganizationService {
 
   async getBranch(id: string, actor: AuthUser) {
     const branch = await this.getScopedBranch(id, actor);
-    const today = this.today();
+    const today = await this.today();
     const [
       summary,
       hours,
@@ -990,7 +1024,7 @@ export class OrganizationService {
       await manager.update(
         BranchDepartment,
         { branchId },
-        { isActive: false, effectiveTo: this.today() },
+        { isActive: false, effectiveTo: await this.today() },
       );
       for (const departmentId of ids) {
         const existing = await manager.findOne(BranchDepartment, {
@@ -1004,7 +1038,7 @@ export class OrganizationService {
                 branchId,
                 departmentId,
                 isActive: true,
-                effectiveFrom: this.today(),
+                effectiveFrom: await this.today(),
                 effectiveTo: null,
               }),
         );
@@ -1499,7 +1533,7 @@ export class OrganizationService {
         await manager.update(
           BranchDepartment,
           { departmentId: saved.id },
-          { isActive: false, effectiveTo: this.today() },
+          { isActive: false, effectiveTo: await this.today() },
         );
         for (const branch of branches) {
           const link = await manager.findOne(BranchDepartment, {
@@ -1512,7 +1546,7 @@ export class OrganizationService {
               : manager.create(BranchDepartment, {
                   branchId: branch.id,
                   departmentId: saved.id,
-                  effectiveFrom: this.today(),
+                  effectiveFrom: await this.today(),
                   isActive: true,
                 }),
           );
@@ -1607,7 +1641,7 @@ export class OrganizationService {
   }
 
   private async branchSummary(branch: Branch) {
-    const today = this.today();
+    const today = await this.today();
     const [employees, departments, shifts, manager] = await Promise.all([
       this.employeeRepository.count({
         where: {
@@ -1860,9 +1894,13 @@ export class OrganizationService {
       `${employee.lastName} ${employee.firstName}`.trim()
     );
   }
-  private today() {
+  private async today() {
+    const organization = await this.organizationRepository
+      .createQueryBuilder("organization")
+      .orderBy("organization.created_at", "ASC")
+      .getOne();
     return new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Asia/Ho_Chi_Minh",
+      timeZone: organization?.timezone ?? "UTC",
     }).format(new Date());
   }
   private async audit(

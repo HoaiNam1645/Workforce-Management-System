@@ -36,6 +36,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { vi } from "date-fns/locale";
+import { formatApp, setAppTimezone } from "@/lib/app-timezone";
+import { getOrganizationTimeContext } from "@/lib/organization-api";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/auth/auth-provider";
@@ -226,6 +228,15 @@ export function DashboardShell({
     enabled: Boolean(user),
     refetchInterval: 60_000,
   });
+  const timeContext = useQuery({
+    queryKey: ["organization-time-context"],
+    queryFn: getOrganizationTimeContext,
+    enabled: Boolean(user),
+    retry: false,
+  });
+  if (timeContext.data?.timezone) {
+    setAppTimezone(timeContext.data.timezone);
+  }
   const readNotification = useMutation({
     meta: { successMessage: false, errorMessage: false },
     mutationFn: markNotificationRead,
@@ -278,11 +289,11 @@ export function DashboardShell({
   ]);
 
   const today = useMemo(
-    () => format(new Date(), "EEEE, 'ngày' d 'tháng' M", { locale: vi }),
-    [],
+    () => formatApp(new Date(), "EEEE, 'ngày' d 'tháng' M", { locale: vi }),
+    [timeContext.data?.timezone],
   );
 
-  if (isLoading || !user) {
+  if (isLoading || !user || timeContext.isPending) {
     return (
       <div className="grid min-h-screen place-items-center bg-canvas">
         <div className="size-8 animate-spin rounded-full border-2 border-line border-t-brand" />
@@ -574,7 +585,10 @@ export function DashboardShell({
                           {item.message}
                         </p>
                         <p className="mt-2 text-[10px] text-muted">
-                          {format(new Date(item.createdAt), "dd/MM/yyyy HH:mm")}
+                          {formatApp(
+                            new Date(item.createdAt),
+                            "dd/MM/yyyy HH:mm",
+                          )}
                         </p>
                       </button>
                     ))

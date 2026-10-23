@@ -1,5 +1,7 @@
 'use client';
 
+import { formatApp } from "@/lib/app-timezone";
+
 import { useQuery } from '@tanstack/react-query';
 import { Banknote, CalendarDays, ChevronRight, LoaderCircle, ReceiptText, X } from 'lucide-react';
 import { format } from 'date-fns';
@@ -19,4 +21,4 @@ function Metric({ label, value, accent }: { label: string; value: string | numbe
 function Cell({ label, value, strong }: { label: string; value: string; strong?: boolean }) { return <div><span className="mb-1 block text-[9px] font-extrabold uppercase text-muted sm:hidden">{label}</span><p className={strong ? 'font-mono text-sm font-black text-brand' : 'font-mono text-sm font-bold'}>{value}</p></div>; }
 function Info({ icon: Icon, label, value }: { icon: typeof CalendarDays; label: string; value: string }) { return <div className="flex items-center gap-3"><Icon className="size-4 text-brand" /><div><p className="text-[9px] font-extrabold uppercase text-muted">{label}</p><p className="mt-1 text-xs font-bold">{value}</p></div></div>; }
 function money(value: string | number | undefined) { return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(Number(value ?? 0)); }
-function date(value: string) { return format(new Date(`${value}T00:00:00`), 'dd/MM/yyyy'); }
+function date(value: string) { return formatApp(new Date(`${value}T00:00:00`), 'dd/MM/yyyy'); }

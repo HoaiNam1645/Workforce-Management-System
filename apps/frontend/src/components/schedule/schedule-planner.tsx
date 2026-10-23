@@ -1,5 +1,7 @@
 "use client";
 
+import { formatApp, toUtcIsoInAppTimezone } from "@/lib/app-timezone";
+
 import {
   closestCenter,
   DndContext,
@@ -171,7 +173,7 @@ export function SchedulePlanner() {
   useEffect(() => {
     const params = new URLSearchParams(searchParams.toString());
     const values: Record<string, string> = {
-      date: format(anchor, "yyyy-MM-dd"),
+      date: formatApp(anchor, "yyyy-MM-dd"),
       view: mode === "week" ? "" : mode,
       branchId,
       departmentId,
@@ -308,10 +310,10 @@ export function SchedulePlanner() {
     );
   const title =
     mode === "day"
-      ? format(anchor, "EEEE, dd/MM/yyyy", { locale: vi })
+      ? formatApp(anchor, "EEEE, dd/MM/yyyy", { locale: vi })
       : mode === "month"
-        ? format(anchor, "'Tháng' MM/yyyy")
-        : `${format(from, "dd/MM")} – ${format(addDays(to, -1), "dd/MM/yyyy")}`;
+        ? formatApp(anchor, "'Tháng' MM/yyyy")
+        : `${formatApp(from, "dd/MM")} – ${formatApp(addDays(to, -1), "dd/MM/yyyy")}`;
   const requestMove = (shift: ShiftItem, day: Date) => {
     const target = moveToDay(shift, day);
     if (target.startsAt === shift.startsAt) return;
@@ -632,10 +634,10 @@ function Week({
                 )}
               >
                 <b className="text-[11px] capitalize lg:text-xs">
-                  {format(day, "EEEE", { locale: vi })}
+                  {formatApp(day, "EEEE", { locale: vi })}
                 </b>
                 <p className="font-mono text-lg lg:text-xl">
-                  {format(day, "dd")}
+                  {formatApp(day, "dd")}
                 </p>
               </div>
               <div className="space-y-2 p-1.5 lg:p-2">
@@ -715,7 +717,7 @@ function Month({
                   isSameDay(day, new Date()) && "bg-brand px-2 py-1 text-white",
                 )}
               >
-                {format(day, "d")}
+                {formatApp(day, "d")}
               </b>
               {items
                 .filter((s) => isSameDay(new Date(s.startsAt), day))
@@ -750,8 +752,8 @@ function List({ items, actions }: { items: ShiftItem[]; actions: Actions }) {
               Thời gian
             </p>
             <span className="text-xs sm:text-sm">
-              {format(new Date(s.startsAt), "dd/MM HH:mm")}–
-              {format(new Date(s.endsAt), "HH:mm")}
+              {formatApp(new Date(s.startsAt), "dd/MM HH:mm")}–
+              {formatApp(new Date(s.endsAt), "HH:mm")}
             </span>
           </div>
           <div>
@@ -866,8 +868,8 @@ function EmployeeScheduleGrid({
           </p>
           <h2 className="mt-1 text-lg font-black">Bảng phân ca</h2>
           <p className="mt-1 text-xs text-muted">
-            {format(from, "dd/MM/yyyy")} –{" "}
-            {format(addDays(to, -1), "dd/MM/yyyy")} · {assignedEmployees}/
+            {formatApp(from, "dd/MM/yyyy")} –{" "}
+            {formatApp(addDays(to, -1), "dd/MM/yyyy")} · {assignedEmployees}/
             {data?.employees.length ?? 0} nhân viên đã có ca
           </p>
         </div>
@@ -913,14 +915,14 @@ function EmployeeScheduleGrid({
                     )}
                   >
                     <p className="text-[9px] font-extrabold uppercase text-muted sm:text-[10px]">
-                      {format(day, "EEEE", { locale: vi })}
+                      {formatApp(day, "EEEE", { locale: vi })}
                     </p>
                     <div className="mt-1 flex items-baseline justify-between">
                       <b className="font-mono text-base sm:text-lg">
-                        {format(day, "dd")}
+                        {formatApp(day, "dd")}
                       </b>
                       <span className="text-[9px] text-muted sm:text-[10px]">
-                        {format(day, "MM")}
+                        {formatApp(day, "MM")}
                       </span>
                     </div>
                   </th>
@@ -1002,7 +1004,7 @@ function EmployeeScheduleGrid({
                                       title={
                                         canOpenShift
                                           ? "Mở chi tiết phân công"
-                                          : `${shift.name} · ${format(new Date(shift.startsAt), "HH:mm")}–${format(new Date(shift.endsAt), "HH:mm")}`
+                                          : `${shift.name} · ${formatApp(new Date(shift.startsAt), "HH:mm")}–${formatApp(new Date(shift.endsAt), "HH:mm")}`
                                       }
                                       className={cn(
                                         "w-full border-l-2 px-1.5 py-2 text-left transition-colors sm:px-2",
@@ -1015,12 +1017,12 @@ function EmployeeScheduleGrid({
                                     >
                                       <span className="flex items-center justify-between gap-1">
                                         <b className="font-mono text-[9px] sm:text-[10px]">
-                                          {format(
+                                          {formatApp(
                                             new Date(shift.startsAt),
                                             "HH:mm",
                                           )}
                                           –
-                                          {format(
+                                          {formatApp(
                                             new Date(shift.endsAt),
                                             "HH:mm",
                                           )}
@@ -1136,8 +1138,8 @@ function Card({
           </Badge>
         </div>
         <p className="mt-2 font-mono text-[10px] text-brand lg:text-xs">
-          {format(new Date(shift.startsAt), "HH:mm")}–
-          {format(new Date(shift.endsAt), "HH:mm")}
+          {formatApp(new Date(shift.startsAt), "HH:mm")}–
+          {formatApp(new Date(shift.endsAt), "HH:mm")}
         </p>
         <p className="mt-2 truncate text-[9px] text-muted lg:text-[10px]">
           {shift.department?.name ?? "Mọi phòng ban"} ·{" "}
@@ -1199,7 +1201,7 @@ function DropDay({
   children: React.ReactNode;
 }) {
   const { isOver, setNodeRef } = useDroppable({
-    id: `schedule-day:${format(day, "yyyy-MM-dd")}`,
+    id: `schedule-day:${formatApp(day, "yyyy-MM-dd")}`,
   });
   return (
     <div
@@ -1302,7 +1304,7 @@ function DraggableMonthShift({
           actions.assign ? actions.assignTo(shift) : actions.edit(shift)
         }
       >
-        <b>{format(new Date(shift.startsAt), "HH:mm")}</b> {shift.name}
+        <b>{formatApp(new Date(shift.startsAt), "HH:mm")}</b> {shift.name}
         {locked ? " · Đã khóa" : ""}
       </button>
     </div>
@@ -1405,8 +1407,8 @@ function ShiftEditor({
         ...form,
         departmentId: form.departmentId || null,
         positionId: form.positionId || null,
-        startsAt: new Date(form.startsAt).toISOString(),
-        endsAt: new Date(form.endsAt).toISOString(),
+        startsAt: toUtcIsoInAppTimezone(form.startsAt),
+        endsAt: toUtcIsoInAppTimezone(form.endsAt),
         unpaidBreakMinutes: Number(form.unpaidBreakMinutes),
         requiredHeadcount: Number(form.requiredHeadcount),
       };
@@ -2034,7 +2036,7 @@ function ScheduleOperationModal({
   const [frequency, setFrequency] = useState<"daily" | "weekly">("weekly");
   const [occurrences, setOccurrences] = useState("4");
   const [until, setUntil] = useState(
-    format(
+    formatApp(
       addMonths(
         operation.type === "repeat" ? new Date(operation.shift.startsAt) : from,
         3,
@@ -2043,16 +2045,16 @@ function ScheduleOperationModal({
     ),
   );
   const [targetDate, setTargetDate] = useState(
-    format(addWeeks(from, 1), "yyyy-MM-dd"),
+    formatApp(addWeeks(from, 1), "yyyy-MM-dd"),
   );
   const [templateName, setTemplateName] = useState(
-    `Lịch ${format(from, "dd/MM")} - ${format(addDays(to, -1), "dd/MM/yyyy")}`,
+    `Lịch ${formatApp(from, "dd/MM")} - ${formatApp(addDays(to, -1), "dd/MM/yyyy")}`,
   );
   const [templateId, setTemplateId] = useState(templates[0]?.id ?? "");
   const [applyBranchId, setApplyBranchId] = useState(
     branchId || options.branches[0]?.id || "",
   );
-  const [applyDate, setApplyDate] = useState(format(from, "yyyy-MM-dd"));
+  const [applyDate, setApplyDate] = useState(formatApp(from, "yyyy-MM-dd"));
   const [allowUnderstaffed, setAllowUnderstaffed] = useState(false);
   const [confirmedDelete, setConfirmedDelete] = useState(false);
   const [success, setSuccess] = useState("");
@@ -2081,7 +2083,7 @@ function ScheduleOperationModal({
         const result = await repeatShift(operation.shift.id, {
           frequency,
           occurrences: Number(occurrences),
-          until: new Date(`${until}T23:59:59`).toISOString(),
+          until: toUtcIsoInAppTimezone(`${until}T23:59:59`),
         });
         return `Đã tạo ${result.created} ca lặp từ “${operation.shift.name}”.`;
       }
@@ -2095,7 +2097,7 @@ function ScheduleOperationModal({
         const result = await copySchedule({
           sourceFrom: from.toISOString(),
           sourceTo: to.toISOString(),
-          targetStart: new Date(`${targetDate}T00:00:00`).toISOString(),
+          targetStart: toUtcIsoInAppTimezone(`${targetDate}T00:00:00`),
         });
         return `Đã sao chép ${result.created} ca sang lịch mới.`;
       }
@@ -2192,8 +2194,8 @@ function ScheduleOperationModal({
               <p className="text-sm font-extrabold">{operation.shift.name}</p>
               <p className="mt-1 text-xs text-muted">
                 Ca gốc:{" "}
-                {format(new Date(operation.shift.startsAt), "dd/MM/yyyy HH:mm")}
-                –{format(new Date(operation.shift.endsAt), "HH:mm")}
+                {formatApp(new Date(operation.shift.startsAt), "dd/MM/yyyy HH:mm")}
+                –{formatApp(new Date(operation.shift.endsAt), "HH:mm")}
               </p>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -2223,7 +2225,7 @@ function ScheduleOperationModal({
                 <input
                   className={input}
                   type="date"
-                  min={format(new Date(operation.shift.startsAt), "yyyy-MM-dd")}
+                  min={formatApp(new Date(operation.shift.startsAt), "yyyy-MM-dd")}
                   value={until}
                   onChange={(e) => setUntil(e.target.value)}
                 />
@@ -2427,7 +2429,7 @@ function RangeSummary({
           Khoảng lịch
         </p>
         <p className="mt-1 text-sm font-extrabold">
-          {format(from, "dd/MM/yyyy")} – {format(addDays(to, -1), "dd/MM/yyyy")}
+          {formatApp(from, "dd/MM/yyyy")} – {formatApp(addDays(to, -1), "dd/MM/yyyy")}
         </p>
       </div>
       <div className="p-3">
@@ -2502,7 +2504,7 @@ function ValidationPanel({
               key={item.id}
               className="border-b border-line p-3 text-xs last:border-0"
             >
-              <b>{item.name}</b> · bắt đầu {format(new Date(item.startsAt), "dd/MM/yyyy HH:mm")}. Hãy sửa sang thời gian chưa bắt đầu trước khi công bố.
+              <b>{item.name}</b> · bắt đầu {formatApp(new Date(item.startsAt), "dd/MM/yyyy HH:mm")}. Hãy sửa sang thời gian chưa bắt đầu trước khi công bố.
             </div>
           ))}
         </div>
@@ -2519,7 +2521,7 @@ function ValidationPanel({
             >
               <span>
                 <b>{item.name}</b> ·{" "}
-                {format(new Date(item.startsAt), "dd/MM HH:mm")}
+                {formatApp(new Date(item.startsAt), "dd/MM HH:mm")}
               </span>
               <span className="font-bold text-warning">
                 {item.assigned}/{item.required} người
@@ -2616,8 +2618,8 @@ function MoveShiftModal({
         <div className="border border-warning/25 bg-warning/10 p-4">
           <p className="font-extrabold">{move.shift.name}</p>
           <p className="mt-2 text-sm text-muted">
-            Từ {format(new Date(move.shift.startsAt), "dd/MM/yyyy HH:mm")} sang{" "}
-            {format(new Date(move.startsAt), "dd/MM/yyyy HH:mm")}.
+            Từ {formatApp(new Date(move.shift.startsAt), "dd/MM/yyyy HH:mm")} sang{" "}
+            {formatApp(new Date(move.startsAt), "dd/MM/yyyy HH:mm")}.
           </p>
         </div>
         <p className="text-sm leading-6 text-muted">

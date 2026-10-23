@@ -1,5 +1,8 @@
 "use client";
 
+import { formatApp } from "@/lib/app-timezone";
+import { vi } from "date-fns/locale";
+
 import { useQuery } from "@tanstack/react-query";
 import {
   Building2,
@@ -227,9 +230,7 @@ export function AdminOverview() {
                   />
                 </div>
                 <p className="mt-2 text-center text-[9px] font-bold text-muted">
-                  {new Date(`${row.day}T00:00:00`).toLocaleDateString("vi-VN", {
-                    weekday: "short",
-                  })}
+                  {formatApp(new Date(`${row.day}T12:00:00Z`), "EEE", { locale: vi })}
                 </p>
               </div>
             ))}

@@ -389,7 +389,7 @@ export const productTours: Record<string, ProductTourDefinition> = {
         title: "GPS và bản đồ",
         description:
           "Tìm địa chỉ hoặc kéo ghim; vòng bán kính thay đổi theo giới hạn chấm công đã nhập.",
-        target: { selectors: ['.leaflet-container'] },
+        target: { selectors: ['.maplibregl-map'] },
       },
       {
         title: "Danh sách cấu hình",
@@ -454,7 +454,7 @@ export const productTours: Record<string, ProductTourDefinition> = {
         title: "Vị trí hiện tại",
         description:
           "Bản đồ cho biết vị trí của bạn và vùng chấm công được cấu hình cho chi nhánh.",
-        target: { selectors: ['.leaflet-container'] },
+        target: { selectors: ['.maplibregl-map'] },
       },
       {
         title: "Hành động chấm công",

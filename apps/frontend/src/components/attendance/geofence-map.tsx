@@ -1,8 +1,8 @@
 'use client';
 
-import { divIcon, latLng, type LeafletEvent } from 'leaflet';
-import { useEffect, useMemo, useState } from 'react';
-import { Circle, MapContainer, Marker, TileLayer, useMap, useMapEvents } from 'react-leaflet';
+import * as maplibregl from 'maplibre-gl';
+import type { GeoJSONSource, Map as MapLibreMap, MapMouseEvent, Marker } from 'maplibre-gl';
+import { useEffect, useRef } from 'react';
 
 type GeofenceMapProps = {
   latitude: number | null;
@@ -11,53 +11,91 @@ type GeofenceMapProps = {
   onPositionChange: (latitude: number, longitude: number) => void;
 };
 
-const DEFAULT_POSITION: [number, number] = [16.047079, 108.20623];
-const TILE_PROVIDERS = [
-  {
-    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
-  },
-  {
-    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-    attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-  },
-];
+const DEFAULT_POSITION: [number, number] = [108.20623, 16.047079];
+const MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
 
 export default function GeofenceMap({ latitude, longitude, radiusM, onPositionChange }: GeofenceMapProps) {
-  const position = useMemo<[number, number]>(() => latitude !== null && longitude !== null ? [latitude, longitude] : DEFAULT_POSITION, [latitude, longitude]);
-  const [tileProviderIndex, setTileProviderIndex] = useState(0);
-  const tileProvider = TILE_PROVIDERS[tileProviderIndex];
-  const markerIcon = useMemo(() => divIcon({
-    className: 'geofence-marker-shell',
-    iconSize: [38, 46],
-    iconAnchor: [19, 43],
-    html: '<div class="geofence-marker"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s7-6.15 7-13a7 7 0 1 0-14 0c0 6.85 7 13 7 13Z"/><circle cx="12" cy="9" r="2.6"/></svg></div>',
-  }), []);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<MapLibreMap | null>(null);
+  const markerRef = useRef<Marker | null>(null);
+  const onPositionChangeRef = useRef(onPositionChange);
+  const longitudeValue = longitude ?? DEFAULT_POSITION[0];
+  const latitudeValue = latitude ?? DEFAULT_POSITION[1];
 
-  return <MapContainer center={position} zoom={20} minZoom={3} maxZoom={21} scrollWheelZoom className="h-full min-h-80 w-full bg-canvas">
-    <TileLayer key={tileProvider.url} attribution={tileProvider.attribution} url={tileProvider.url} maxNativeZoom={19} maxZoom={21} eventHandlers={{ tileerror: () => setTileProviderIndex((current) => Math.min(current + 1, TILE_PROVIDERS.length - 1)) }} />
-    <MapClick onPositionChange={onPositionChange} />
-    <MapViewport position={position} radiusM={radiusM} />
-    {latitude !== null && longitude !== null && <Circle center={position} radius={radiusM} pathOptions={{ color: '#2563eb', fillColor: '#60a5fa', fillOpacity: 0.2, weight: 2 }} />}
-    <Marker
-      position={position}
-      icon={markerIcon}
-      draggable
-      eventHandlers={{ dragend: (event: LeafletEvent) => { const point = event.target.getLatLng(); onPositionChange(point.lat, point.lng); } }}
-    />
-  </MapContainer>;
-}
-
-function MapClick({ onPositionChange }: Pick<GeofenceMapProps, 'onPositionChange'>) {
-  useMapEvents({ click: (event) => onPositionChange(event.latlng.lat, event.latlng.lng) });
-  return null;
-}
-
-function MapViewport({ position, radiusM }: { position: [number, number]; radiusM: number }) {
-  const map = useMap();
   useEffect(() => {
-    const visibleDiameter = Math.max(radiusM * 2.15, 48);
-    map.fitBounds(latLng(position[0], position[1]).toBounds(visibleDiameter), { padding: [20, 20], animate: true, maxZoom: 21 });
-  }, [map, position, radiusM]);
-  return null;
+    onPositionChangeRef.current = onPositionChange;
+  }, [onPositionChange]);
+
+  useEffect(() => {
+    if (!containerRef.current || mapRef.current) return;
+    const map = new maplibregl.Map({
+      container: containerRef.current,
+      style: MAP_STYLE,
+      center: [longitudeValue, latitudeValue],
+      zoom: 18,
+      minZoom: 3,
+      maxZoom: 21,
+      attributionControl: false,
+    });
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
+    map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
+    const marker = new maplibregl.Marker({ color: '#2563eb', draggable: true })
+      .setLngLat([longitudeValue, latitudeValue])
+      .addTo(map);
+    marker.on('dragend', () => {
+      const point = marker.getLngLat();
+      onPositionChangeRef.current(point.lat, point.lng);
+    });
+    map.on('click', (event: MapMouseEvent) => onPositionChangeRef.current(event.lngLat.lat, event.lngLat.lng));
+    map.on('load', () => {
+      map.addSource('geofence', { type: 'geojson', data: circleFeature(latitudeValue, longitudeValue, radiusM) });
+      map.addLayer({ id: 'geofence-fill', type: 'fill', source: 'geofence', paint: { 'fill-color': '#60a5fa', 'fill-opacity': 0.2 } });
+      map.addLayer({ id: 'geofence-line', type: 'line', source: 'geofence', paint: { 'line-color': '#2563eb', 'line-width': 2 } });
+      fitRadius(map, latitudeValue, longitudeValue, radiusM);
+    });
+    mapRef.current = map;
+    markerRef.current = marker;
+    return () => {
+      marker.remove();
+      map.remove();
+      mapRef.current = null;
+      markerRef.current = null;
+    };
+    // The map is initialized once; later coordinate changes are synchronized below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    markerRef.current?.setLngLat([longitudeValue, latitudeValue]);
+    if (!map?.isStyleLoaded()) return;
+    (map.getSource('geofence') as GeoJSONSource | undefined)?.setData(circleFeature(latitudeValue, longitudeValue, radiusM));
+    fitRadius(map, latitudeValue, longitudeValue, radiusM);
+  }, [latitudeValue, longitudeValue, radiusM]);
+
+  return <div ref={containerRef} className="h-full min-h-80 w-full bg-canvas" />;
+}
+
+function fitRadius(map: MapLibreMap, latitude: number, longitude: number, radiusM: number) {
+  const latDelta = Math.max(radiusM, 25) / 111_320;
+  const lngDelta = latDelta / Math.max(Math.cos(latitude * Math.PI / 180), 0.2);
+  map.fitBounds([[longitude - lngDelta, latitude - latDelta], [longitude + lngDelta, latitude + latDelta]], {
+    padding: 48,
+    maxZoom: 20,
+    duration: 350,
+  });
+}
+
+function circleFeature(latitude: number, longitude: number, radiusM: number): GeoJSON.Feature<GeoJSON.Polygon> {
+  const coordinates: [number, number][] = [];
+  const angularDistance = radiusM / 6_371_008.8;
+  const lat1 = latitude * Math.PI / 180;
+  const lon1 = longitude * Math.PI / 180;
+  for (let index = 0; index <= 72; index += 1) {
+    const bearing = index / 72 * Math.PI * 2;
+    const lat2 = Math.asin(Math.sin(lat1) * Math.cos(angularDistance) + Math.cos(lat1) * Math.sin(angularDistance) * Math.cos(bearing));
+    const lon2 = lon1 + Math.atan2(Math.sin(bearing) * Math.sin(angularDistance) * Math.cos(lat1), Math.cos(angularDistance) - Math.sin(lat1) * Math.sin(lat2));
+    coordinates.push([lon2 * 180 / Math.PI, lat2 * 180 / Math.PI]);
+  }
+  return { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [coordinates] } };
 }

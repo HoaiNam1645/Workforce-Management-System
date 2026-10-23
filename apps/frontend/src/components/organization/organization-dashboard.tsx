@@ -727,7 +727,11 @@ function BranchForm({
     setGeocoding(true);
     setMapError("");
     try {
-      const result = await geocodeAddress(addressQuery);
+      // A full address may already contain its country (for example a US address),
+      // so do not silently append the form's default country before trying it.
+      const rawAddress = form.addressLine.trim();
+      const result = await geocodeAddress(rawAddress)
+        ?? (addressQuery !== rawAddress ? await geocodeAddress(addressQuery) : null);
       if (!result) {
         setMapError(
           "Không tìm thấy địa chỉ. Hãy bổ sung quận, tỉnh hoặc kéo ghim đến vị trí đúng.",

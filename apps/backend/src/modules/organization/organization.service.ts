@@ -162,7 +162,6 @@ export class OrganizationService {
       q: query,
       format: "jsonv2",
       limit: "1",
-      countrycodes: "vn",
     });
     try {
       const response = await fetch(
@@ -170,7 +169,7 @@ export class OrganizationService {
         {
           headers: {
             Accept: "application/json",
-            "Accept-Language": "vi",
+            "Accept-Language": "vi,en",
             "User-Agent": "Workzen Workforce Management/0.1",
           },
           signal: AbortSignal.timeout(8000),

@@ -136,7 +136,18 @@ export function ProductTour() {
 
     const handleManualStart = () => start(true);
     window.addEventListener(START_TOUR_EVENT, handleManualStart);
-    autoStartTimer.current = setTimeout(() => start(false), 1100);
+    let readinessChecks = 0;
+    const startWhenReady = () => {
+      const status = document.querySelector("[data-tour-status]")?.getAttribute("data-tour-status");
+      if (status === "blocked") return;
+      if (status === "loading" && readinessChecks < 10) {
+        readinessChecks += 1;
+        autoStartTimer.current = setTimeout(startWhenReady, 500);
+        return;
+      }
+      start(false);
+    };
+    autoStartTimer.current = setTimeout(startWhenReady, 1100);
 
     return () => {
       window.removeEventListener(START_TOUR_EVENT, handleManualStart);

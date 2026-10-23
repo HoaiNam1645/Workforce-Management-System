@@ -8,6 +8,8 @@ import {
   CircleDollarSign,
   Clock3,
   LoaderCircle,
+  RefreshCw,
+  Settings2,
   UsersRound,
 } from "lucide-react";
 import Link from "next/link";
@@ -51,20 +53,50 @@ export function AdminOverview() {
   const query = useQuery({
     queryKey: ["admin-dashboard"],
     queryFn: getDashboard,
-    refetchInterval: 60_000,
+    refetchInterval: (currentQuery) => currentQuery.state.data ? 60_000 : false,
   });
   if (query.isLoading)
     return (
-      <div className="grid min-h-80 place-items-center">
+      <div data-tour-status="loading" className="grid min-h-80 place-items-center">
         <LoaderCircle className="size-6 animate-spin text-brand" />
       </div>
     );
-  if (!query.data)
+  if (!query.data) {
+    const message = query.error instanceof Error
+      ? query.error.message
+      : "Không thể tải dữ liệu tổng quan.";
+    const requiresSetup = message.toLocaleLowerCase("vi").includes("chưa được cấu hình");
+
     return (
-      <div className="border border-danger/20 bg-danger-soft p-6 text-sm font-bold text-danger">
-        Không tải được dữ liệu tổng quan.
-      </div>
+      <section
+        data-tour-status="blocked"
+        className="mx-auto max-w-3xl border border-line bg-surface p-6 sm:p-8"
+      >
+        <div className={`grid size-11 place-items-center ${requiresSetup ? "bg-info-soft text-brand" : "bg-danger-soft text-danger"}`}>
+          {requiresSetup ? <Settings2 className="size-5" /> : <RefreshCw className="size-5" />}
+        </div>
+        <h1 className="mt-5 text-xl font-black tracking-[-0.03em] sm:text-2xl">
+          {requiresSetup ? "Chưa cấu hình doanh nghiệp" : "Không thể tải dữ liệu tổng quan"}
+        </h1>
+        <p className="mt-2 max-w-xl text-sm leading-6 text-muted">
+          {requiresSetup
+            ? "Hãy thiết lập thông tin doanh nghiệp và chi nhánh trước khi sử dụng các chức năng vận hành."
+            : message}
+        </p>
+        <div className="mt-6 flex flex-wrap gap-3">
+          {requiresSetup && (
+            <Button asChild variant="brand">
+              <Link href="/admin/organization">Thiết lập doanh nghiệp</Link>
+            </Button>
+          )}
+          <Button variant="outline" onClick={() => query.refetch()} loading={query.isFetching} loadingText="Đang kiểm tra">
+            <RefreshCw className="size-4" />
+            Thử lại
+          </Button>
+        </div>
+      </section>
     );
+  }
   const data = query.data;
   const completed = steps.filter(([key]) => data.setup[key] > 0).length;
   const needsOnboarding = completed < steps.length;
@@ -80,7 +112,7 @@ export function AdminOverview() {
     1,
   );
   return (
-    <div className="mx-auto min-w-0 max-w-[1560px] space-y-5">
+    <div data-tour-status="ready" className="mx-auto min-w-0 max-w-[1560px] space-y-5">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-brand">

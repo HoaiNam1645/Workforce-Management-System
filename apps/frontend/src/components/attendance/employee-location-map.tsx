@@ -5,6 +5,7 @@ import type { GeoJSONSource, Map as MapLibreMap, Marker } from 'maplibre-gl';
 import { LoaderCircle, RefreshCw } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { getMapStyleUrl } from '@/lib/map-provider';
+import { MapHost } from './map-host';
 
 type EmployeeLocationMapProps = {
   branchLatitude: number | null;
@@ -94,7 +95,7 @@ export default function EmployeeLocationMap(props: EmployeeLocationMapProps) {
 
   return (
     <div className="relative h-full min-h-64 w-full bg-canvas">
-      <div ref={containerRef} className="absolute inset-0" />
+      <MapHost ref={containerRef} />
       {mapStatus === 'loading' && (
         <div className="absolute inset-0 grid place-items-center bg-canvas/85">
           <p className="flex items-center gap-2 text-xs font-bold text-muted"><LoaderCircle className="size-4 animate-spin text-brand" />Đang tải bản đồ...</p>

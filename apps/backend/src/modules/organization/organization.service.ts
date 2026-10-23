@@ -161,8 +161,46 @@ export class OrganizationService {
     if (!query || query.length < 3) {
       throw new BadRequestException("Địa chỉ tìm kiếm phải có ít nhất 3 ký tự");
     }
+    const simplifiedQuery = query
+      .replace(/\b(?:suite|ste|unit|room)\s*#?[A-Za-z0-9-]+\b/gi, "")
+      .replace(
+        /\b(Street|St|Road|Rd|Avenue|Ave|Boulevard|Blvd|Drive|Dr|Lane|Ln)\s+[A-Za-z]+\d+\b/gi,
+        "$1",
+      )
+      .replace(/\s+,/g, ",")
+      .trim();
+    const candidates = [...new Set([query, simplifiedQuery])];
+    const mapTilerKey = process.env.MAPTILER_API_KEY?.trim();
+    if (mapTilerKey) {
+      for (const candidate of candidates) {
+        try {
+          const response = await fetch(
+            `https://api.maptiler.com/geocoding/${encodeURIComponent(candidate)}.json?${new URLSearchParams({ key: mapTilerKey, limit: "1", language: "vi" })}`,
+            { signal: AbortSignal.timeout(8000) },
+          );
+          if (!response.ok) continue;
+          const result = (await response.json()) as {
+            features?: Array<{
+              center: [number, number];
+              place_name?: string;
+              place_type?: string[];
+            }>;
+          };
+          const feature = result.features?.[0];
+          if (!feature) continue;
+          if (candidate === query && feature.place_type?.includes("place") && candidates.length > 1) continue;
+          return {
+            latitude: feature.center[1],
+            longitude: feature.center[0],
+            displayName: feature.place_name ?? candidate,
+          };
+        } catch {
+          // Continue with the simplified query or the OSM fallback below.
+        }
+      }
+    }
     const params = new URLSearchParams({
-      q: query,
+      q: simplifiedQuery,
       format: "jsonv2",
       limit: "1",
     });

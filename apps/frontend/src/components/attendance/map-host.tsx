@@ -2,6 +2,6 @@
 
 import { forwardRef, memo } from 'react';
 
-export const MapHost = memo(forwardRef<HTMLDivElement>(function MapHost(_, ref) {
-  return <div ref={ref} className="absolute inset-0" />;
+export const MapHost = memo(forwardRef<HTMLDivElement, { className: string }>(function MapHost({ className }, ref) {
+  return <div ref={ref} className={className} />;
 }));

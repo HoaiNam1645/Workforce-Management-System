@@ -93,7 +93,7 @@ export default function GeofenceMap({ latitude, longitude, radiusM, onPositionCh
 
   return (
     <div className="relative h-full min-h-80 w-full bg-canvas">
-      <MapHost ref={containerRef} />
+      <MapHost ref={containerRef} className="h-full min-h-80 w-full" />
       {mapStatus === 'loading' && (
         <div className="absolute inset-0 grid place-items-center bg-canvas/85">
           <p className="flex items-center gap-2 text-xs font-bold text-muted"><LoaderCircle className="size-4 animate-spin text-brand" />Đang tải bản đồ...</p>

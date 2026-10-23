@@ -21,9 +21,10 @@ async function bootstrap(): Promise<void> {
   });
 
   const port = config.get<number>('PORT', 4000);
-  await app.listen(port);
+  const host = config.get<string>('HOST', '0.0.0.0');
+  await app.listen(port, host);
 
-  console.log(`Backend is running at http://localhost:${port}/api`);
+  console.log(`Backend is running at http://${host}:${port}/api`);
 }
 
 void bootstrap();

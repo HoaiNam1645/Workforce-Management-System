@@ -72,13 +72,13 @@ export default function EmployeeLocationMap(props: EmployeeLocationMapProps) {
     const render = () => {
       const employeeColor = props.withinGeofence === null ? '#2563eb' : props.withinGeofence ? '#0b8f70' : '#d55757';
       employeeMarkerRef.current?.remove();
-      employeeMarkerRef.current = new maplibregl.Marker({ color: employeeColor })
+      employeeMarkerRef.current = new maplibregl.Marker({ element: createMarkerElement(employeeColor) })
         .setLngLat([props.employeeLongitude, props.employeeLatitude])
         .setPopup(new maplibregl.Popup({ offset: 24 }).setText('Vị trí của bạn'))
         .addTo(map);
       branchMarkerRef.current?.remove();
       if (props.branchLatitude !== null && props.branchLongitude !== null) {
-        branchMarkerRef.current = new maplibregl.Marker({ color: '#2563eb' })
+        branchMarkerRef.current = new maplibregl.Marker({ element: createMarkerElement('#2563eb') })
           .setLngLat([props.branchLongitude, props.branchLatitude])
           .setPopup(new maplibregl.Popup({ offset: 24 }).setText('Tâm khu vực chấm công'))
           .addTo(map);
@@ -108,6 +108,14 @@ export default function EmployeeLocationMap(props: EmployeeLocationMapProps) {
       )}
     </div>
   );
+}
+
+function createMarkerElement(color: string) {
+  const element = document.createElement('div');
+  element.className = 'workforce-map-marker';
+  element.style.setProperty('--marker-color', color);
+  element.innerHTML = '<span></span>';
+  return element;
 }
 
 function setCircleSource(map: MapLibreMap, id: string, data: GeoJSON.Feature<GeoJSON.Polygon>, color: string, opacity: number) {

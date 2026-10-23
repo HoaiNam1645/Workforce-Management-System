@@ -50,7 +50,7 @@ export default function GeofenceMap({ latitude, longitude, radiusM, onPositionCh
     });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
     map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
-    const marker = new maplibregl.Marker({ color: '#2563eb', draggable: true })
+    const marker = new maplibregl.Marker({ element: createMarkerElement('#2563eb'), draggable: true })
       .setLngLat([longitudeValue, latitudeValue])
       .addTo(map);
     marker.on('dragend', () => {
@@ -106,6 +106,14 @@ export default function GeofenceMap({ latitude, longitude, radiusM, onPositionCh
       )}
     </div>
   );
+}
+
+function createMarkerElement(color: string) {
+  const element = document.createElement('div');
+  element.className = 'workforce-map-marker';
+  element.style.setProperty('--marker-color', color);
+  element.innerHTML = '<span></span>';
+  return element;
 }
 
 function fitRadius(map: MapLibreMap, latitude: number, longitude: number, radiusM: number) {
